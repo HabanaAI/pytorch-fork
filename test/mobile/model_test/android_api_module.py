@@ -1,22 +1,12 @@
-import torch
-from torch import Tensor
 from typing import Dict, List, Tuple, Optional
 
-OUTPUT_DIR = "src/androidTest/assets/"
+import torch
+from torch import Tensor
 
-def scriptAndSave(module, fileName):
-    print('-' * 80)
-    script_module = torch.jit.script(module)
-    print(script_module.graph)
-    outputFileName = OUTPUT_DIR + fileName
-    # note that the lite interpreter model can also be used in full JIT
-    script_module._save_for_lite_interpreter(outputFileName)
-    print("Saved to " + outputFileName)
-    print('=' * 80)
 
-class Test(torch.jit.ScriptModule):
+class AndroidAPIModule(torch.jit.ScriptModule):
     def __init__(self):
-        super(Test, self).__init__()
+        super(AndroidAPIModule, self).__init__()
 
     @torch.jit.script_method
     def forward(self, input):
@@ -76,7 +66,9 @@ class Test(torch.jit.ScriptModule):
         return res
 
     @torch.jit.script_method
-    def tupleIntSumReturnTuple(self, input: Tuple[int, int, int]) -> Tuple[Tuple[int, int, int], int]:
+    def tupleIntSumReturnTuple(
+        self, input: Tuple[int, int, int]
+    ) -> Tuple[Tuple[int, int, int], int]:
         sum = 0
         for x in input:
             sum += x
@@ -117,7 +109,7 @@ class Test(torch.jit.ScriptModule):
     @torch.jit.script_method
     def conv2d(self, x: Tensor, w: Tensor, toChannelsLast: bool) -> Tensor:
         r = torch.nn.functional.conv2d(x, w)
-        if (toChannelsLast):
+        if toChannelsLast:
             r = r.contiguous(memory_format=torch.channels_last)
         else:
             r = r.contiguous()
@@ -134,5 +126,3 @@ class Test(torch.jit.ScriptModule):
     @torch.jit.script_method
     def contiguousChannelsLast3d(self, x: Tensor) -> Tensor:
         return x.contiguous(memory_format=torch.channels_last_3d)
-
-scriptAndSave(Test(), "test.pt")
