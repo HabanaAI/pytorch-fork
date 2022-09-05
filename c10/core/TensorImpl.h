@@ -2352,7 +2352,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
     return data_type_ != caffe2::TypeMeta();
   }
 
-  void set_storage_keep_dtype(at::Storage storage) {
+  virtual void set_storage_keep_dtype(at::Storage storage) {
     TORCH_CHECK(
         allow_tensor_metadata_change(),
         "set_storage ",
