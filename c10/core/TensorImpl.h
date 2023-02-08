@@ -2035,16 +2035,21 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
    */
   inline bool has_compatible_shallow_copy_type(DispatchKeySet from) {
     auto is_dense = [](DispatchKeySet ts) {
+      static const auto envp = std::getenv("PT_HPU_LAZY_MODE");
+      static const bool hpu_lazy = (envp == nullptr) or
+          ((std::atoi(envp) == 1) or (std::atoi(envp) == 2));
       constexpr auto dense_backends = DispatchKeySet(
           {BackendComponent::CPUBit,
            BackendComponent::CUDABit,
            BackendComponent::MPSBit,
            BackendComponent::HIPBit,
            BackendComponent::XPUBit,
-           BackendComponent::HPUBit,
            BackendComponent::MTIABit});
       constexpr auto dense_k = DispatchKeySet(DispatchKey::Dense);
-      return ts.has_any(dense_k) && ts.has_any(dense_backends);
+      return ts.has_any(dense_k) &&
+          (!hpu_lazy ? ts.has_any(dense_backends.add(
+                           DispatchKeySet(BackendComponent::HPUBit)))
+                     : ts.has_any(dense_backends));
     };
     auto is_sparse = [](DispatchKeySet ts) {
       constexpr auto sparse_backends = DispatchKeySet(
