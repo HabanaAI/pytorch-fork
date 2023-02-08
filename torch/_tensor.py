@@ -27,6 +27,13 @@ from torch.overrides import (
     has_torch_function_variadic,
 )
 
+# This is only required for making HPU lazy to work on 2.0 upstream PyTorch.
+# This change is not to be upstreamed
+# The default mode is eager, hence PT_HPU_LAZY_MODE == 1/2 is lazy mode.
+# To set non-lazy mode, use PT_HPU_LAZY_MODE=0.
+import os
+hpu_lazy_flag = os.getenv('PT_HPU_LAZY_MODE', '0')
+hpu_lazy = hpu_lazy_flag == '1' or hpu_lazy_flag == '2'
 
 _P = ParamSpec("_P")
 _TensorLike = TypeVar("_TensorLike", bound=_C.TensorBase)
@@ -154,10 +161,11 @@ class Tensor(torch._C.TensorBase):
             # doesn't work because of
             # https://github.com/pytorch/pytorch/issues/47442
             # Update the test in test_serialization if you remove 'meta' from here
+            # The PT_HPU_LAZY_MODE is unset, or set to 0 for non-lazy flow in hpu. Add the hpu
+            # backend for the storage less backend tensor list only if lazy is enabled on hpu
             if (
                 self.is_sparse
-                or self.device.type
-                in ["lazy", "xla", "mtia", "mps", "maia", "meta", "ipu"]
+                or self.device.type in ["lazy", "xla", "mtia", "mps", "maia", "meta", "ipu"] + (["hpu"] if hpu_lazy else [])
                 or (
                     not torch._C._has_storage(self)
                     and self.device.type == torch._C._get_privateuse1_backend_name()
@@ -330,7 +338,7 @@ class Tensor(torch._C.TensorBase):
             torch.serialization._serialization_tls.materialize_fake_tensors
         )
 
-        if self.device.type in ["xla", "maia", "mtia"] or (
+        if self.device.type in ["xla", "maia", "mtia"] + (["hpu"] if hpu_lazy else []) or (
             not torch._C._has_storage(self)
             and self.device.type == torch._C._get_privateuse1_backend_name()
         ):
