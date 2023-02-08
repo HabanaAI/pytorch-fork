@@ -26,6 +26,13 @@ from torch.overrides import (
     has_torch_function_variadic,
 )
 
+# This is only required for making HPU lazy to work on 2.0 upstream PyTorch.
+# This change is not to be upstreamed
+# The default mode is lazy, hence PT_HPU_LAZY_MODE is None/1/2 is lazy mode.
+# To set non-lazy mode, use PT_HPU_LAZY_MODE=0.
+import os
+hpu_lazy_flag = os.getenv('PT_HPU_LAZY_MODE')
+hpu_lazy = hpu_lazy_flag is None or hpu_lazy_flag == '1' or hpu_lazy_flag == '2'
 
 def _handle_torch_function_and_wrap_type_error_to_not_implemented(f):
     assigned = functools.WRAPPER_ASSIGNMENTS
@@ -126,10 +133,11 @@ class Tensor(torch._C.TensorBase):
             # doesn't work because of
             # https://github.com/pytorch/pytorch/issues/47442
             # Update the test in test_serialization if you remove 'meta' from here
+            # The PT_HPU_LAZY_MODE is unset, or set to 0 for non-lazy flow in hpu. Add the hpu
+            # backend for the storage less backend tensor list only if lazy is enabled on hpu
             if (
                 self.is_sparse
-                or self.device.type
-                in ["lazy", "xla", "mtia", "mps", "maia", "meta", "ipu"]
+                or self.device.type in ["lazy", "xla", "mtia", "mps", "maia", "meta", "ipu"] + (["hpu"] if hpu_lazy else [])
                 or (
                     not torch._C._has_storage(self)
                     and self.device.type == torch._C._get_privateuse1_backend_name()
@@ -326,7 +334,9 @@ class Tensor(torch._C.TensorBase):
         # 2. Python list is not a good fit due to performance reason.
         #    `tolist()` converts every single element in the tensor into python objects
         #    and serialize them one by one.
-        if self.device.type in ["mtia"]:
+        # The PT_HPU_LAZY_MODE is unset, or set to 0 for non-lazy flow in hpu. Add the hpu
+        # backend for the storage less backend tensor list only if lazy is enabled on hpu
+        if self.device.type in ["mtia"] + (["hpu"] if hpu_lazy else []):
             # Convert BFloat16 tesors to Float32 before conversion to numpy, as numpy doesn't
             # support BFloat16. The rebuild tensor from numpy takes in the original self.dtype,
             # this would reconstruct the BFloat16 tensor from numpy.
