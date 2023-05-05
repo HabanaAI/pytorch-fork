@@ -25,7 +25,7 @@ from typing_extensions import Self
 import torch
 from torch import device, dtype, Tensor
 from torch._prims_common import DeviceLikeType
-from torch.nn.parameter import Buffer, Parameter
+from torch.nn.parameter import Buffer, Parameter, UninitializedParameter
 from torch.utils._python_dispatch import is_traceable_wrapper_subclass
 from torch.utils.hooks import BackwardHook, RemovableHandle
 
@@ -956,6 +956,9 @@ class Module:
             elif p_should_use_set_data:
                 param.data = param_applied
                 out_param = param
+            elif type(param) is UninitializedParameter:
+                out_param = UninitializedParameter(requires_grad=param_applied.requires_grad, device=param_applied.device, dtype = param_applied.dtype)
+                self._parameters[key] = out_param
             else:
                 assert isinstance(param, Parameter)
                 assert param.is_leaf
