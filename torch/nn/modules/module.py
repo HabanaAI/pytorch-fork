@@ -7,7 +7,7 @@ import weakref
 
 import torch
 from torch._prims_common import DeviceLikeType
-from ..parameter import Parameter
+from ..parameter import Parameter, UninitializedParameter
 import torch.utils.hooks as hooks
 
 from torch import Tensor, device, dtype
@@ -825,6 +825,9 @@ class Module:
             elif p_should_use_set_data:
                 param.data = param_applied
                 out_param = param
+            elif type(param) is UninitializedParameter:
+                out_param = UninitializedParameter(requires_grad=param_applied.requires_grad, device=param_applied.device, dtype = param_applied.dtype)
+                self._parameters[key] = out_param
             else:
                 assert isinstance(param, Parameter)
                 assert param.is_leaf
