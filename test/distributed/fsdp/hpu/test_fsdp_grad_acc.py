@@ -26,6 +26,7 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TEST_WITH_DEV_DBG_ASAN,
 )
+import habana_frameworks.torch as ht
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -118,11 +119,13 @@ class TestGradAcc(FSDPTest):
                 backward pass, if at all.
         """
         # Initialize the FSDP model and optimizer
+        device = torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {
             "cpu_offload": cpu_offload,
             "backward_prefetch": backward_prefetch,
             "sharding_strategy": sharding_strategy,
             "use_orig_params": use_orig_params,
+            "device_id": device,
         }
         fsdp_model: FSDP = TransformerWithSharedParams.init(
             self.process_group,
@@ -132,7 +135,7 @@ class TestGradAcc(FSDPTest):
             deterministic=True,
             add_bn=False,  # disable BN since the test uses varying batch sizes
         )
-        device = torch.device("cuda")
+        device = device
         optim = torch.optim.SGD(
             fsdp_model.parameters(),
             lr=0.01,

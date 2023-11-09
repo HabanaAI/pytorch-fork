@@ -53,7 +53,6 @@ from torch.testing._internal.common_utils import (
 )
 
 import habana_frameworks.torch as ht
-device_hpu = torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -100,7 +99,7 @@ class Model(Module):
             self.inner.register_buffer(
                 "non_persistent_buffer", torch.randn(BUFFER_SHAPE), persistent=False
             )
-        device_id = f'{device_hpu}'
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         if wrap_fsdp:
             self.inner = FSDP(
                 self.inner,
@@ -166,6 +165,7 @@ class TestFSDPStateDict(FSDPTest):
     def _get_simple_nested_model(
         self, *fsdp_args, wrap=True, checkpoint_wrap=False, **fsdp_kwargs
     ):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         if wrap:
             lin1 = nn.Linear(10, 10, bias=False).to(device_hpu)
             lin2 = nn.Linear(10, 10, bias=False).to(device_hpu)
@@ -184,6 +184,7 @@ class TestFSDPStateDict(FSDPTest):
         return model
 
     def _get_simple_model(self, *fsdp_args, checkpoint_wrap=False, **fsdp_kwargs):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         lin = nn.Linear(10, 10, bias=False).to(device_hpu)
         if checkpoint_wrap:
             lin = checkpoint_wrapper(lin)
@@ -193,6 +194,7 @@ class TestFSDPStateDict(FSDPTest):
     def _get_multibuffer_nested_model(
         self, *fsdp_args, wrap=True, checkpoint_wrap=False, **fsdp_kwargs
     ):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         full_p = torch.float32
         lin_mp = fsdp_kwargs.pop("mixed_precision", None)
         bn_mp = (
@@ -228,6 +230,7 @@ class TestFSDPStateDict(FSDPTest):
         class FSDPContainer(nn.Module):
             def __init__(self, fsdp_1, fsdp_2):
                 super().__init__()
+                device_hpu = torch.device("hpu", ht.hpu.current_device())
                 self.non_fsdp_lin = nn.Linear(10, 10, bias=False).to(device_hpu)
                 self.fsdp_1 = fsdp_1
                 self.fsdp_2 = fsdp_2
@@ -474,6 +477,7 @@ class TestFSDPStateDict(FSDPTest):
             assert_fn=self.assertNotEqual,
         )
         # Broadcast the module states from rank 0 with `sync_module_states=True`
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         new_fsdp_model = FSDP(
             new_model,
             device_id=device_hpu,
@@ -520,7 +524,7 @@ class TestFSDPStateDict(FSDPTest):
             use_orig_params and state_dict_type not in _UNFLATTENED_STATE_DICT_IMPLS
         ):
             return  # not supported
-        device = torch.device(self.rank)
+        device = torch.device("hpu", ht.hpu.current_device())
         for model_call in [
             partial(
                 self._get_non_fsdp_root_module,
@@ -543,7 +547,7 @@ class TestFSDPStateDict(FSDPTest):
                 model.half()
             # Run a forward/backward to compute gradients to test the case
             # where there are gradients populated
-            inp = torch.randn((3, 10), device=device_hpu)
+            inp = torch.randn((3, 10), device=device)
             if fp16:
                 inp = inp.half()
             model(inp).sum().backward()
@@ -573,7 +577,7 @@ class TestFSDPStateDict(FSDPTest):
 
             model_new = model_call()
             if not cpu_offload.offload_params:
-                model_new = model_new.to(device_hpu)
+                model_new = model_new.to(device)
             if fp16:
                 model_new.half()
             # Run a forward/backward to compute gradients to test the case
@@ -642,6 +646,7 @@ class TestFSDPStateDict(FSDPTest):
         with ctx:
             fsdp_state_dict = _get_state_dict(model, cpu_offload.offload_params, False)
 
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         self._validate_state_dict_contents(
             model, fsdp_state_dict, state_dict_rank0_and_offload
         )
@@ -685,11 +690,12 @@ class TestFSDPStateDict(FSDPTest):
             if mixed_precision
             else None
         )
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = self._get_simple_nested_model(mixed_precision=mixed_precision)
         optim = torch.optim.SGD(model.parameters(), lr=0.1)
         initial_params = get_full_params(model)
         for _ in range(6):
-            inp = torch.randn(1, 10, device=ht.hpu.current_device())
+            inp = torch.randn(1, 10, device=device_hpu)
             output = model(*inp)
             loss = output.sum()
             expected_dtype = torch.float32 if mixed_precision is None else torch.float16
@@ -738,6 +744,7 @@ class TestFSDPStateDict(FSDPTest):
     ):
         # keep everything deterministic for input data
         torch.manual_seed(0)
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
 
         model = Model(wrap_fsdp, register_buffers=register_buffers).to(device_hpu)
         if wrap_fsdp:
@@ -774,8 +781,9 @@ class TestFSDPStateDict(FSDPTest):
         # TODO: Move this test to common_fsdp.
         model = self._initialize_model(wrap_fsdp)
         optim = SGD(model.parameters(), lr=0.1)
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
 
-        in_data = torch.rand(64, 4, requires_grad=True, device=torch.device("hpu"))
+        in_data = torch.rand(64, 4, requires_grad=True, device=device_hpu)
         for _ in range(3):
             out = model(in_data)
             out.sum().backward()
@@ -853,12 +861,13 @@ class TestFSDPStateDict(FSDPTest):
         else:
             model = self._initialize_model(wrap_fsdp=True, register_buffers=True)
         optim = SGD(model.parameters(), lr=0.1)
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         if not fsdp_root:
             in_data = torch.randn(
-                1, 10, requires_grad=True, device=torch.device("hpu")
+                1, 10, requires_grad=True, device=(device_hpu)
             )
         else:
-            in_data = torch.rand(64, 4, requires_grad=True, device=torch.device("hpu"))
+            in_data = torch.rand(64, 4, requires_grad=True, device=device_hpu)
         for _ in range(3):
             out = model(in_data)
             out.sum().backward()
@@ -914,7 +923,7 @@ class TestFSDPStateDict(FSDPTest):
     @parametrize("state_dict_type", _SUPPORTED_STATE_DICT_IMPLS)
     @parametrize("double_nest", [True])
     def test_state_dict_skip_module(self, state_dict_type, double_nest):
-        ht.hpu.set_device(self.rank)
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
 
         def _create_module(wrap_fsdp=True):
             LINEAR_SKIP = "linear_skip"
@@ -939,7 +948,7 @@ class TestFSDPStateDict(FSDPTest):
 
         fsdp, linear_skip_tensor_names = _create_module()
         # Run a forward pass
-        inp = torch.randn((1, 10), device=ht.hpu.current_device())
+        inp = torch.randn((1, 10), device=device_hpu)
         loss = fsdp(inp)
         loss.sum().backward()
 
@@ -987,6 +996,7 @@ class TestFSDPStateDict(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_wrong_state_dict_config(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = FSDP(Model(wrap_fsdp=True).to(device_hpu))
         with self.assertRaisesRegex(RuntimeError, "Expected state_dict_config of type"):
             with model.state_dict_type(
@@ -1002,6 +1012,7 @@ class TestFSDPStateDict(FSDPTest):
     def test_state_dict_with_ignored_modules(
         self, state_dict_type, prefix, ignore_inner, mixed_precision
     ):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         # Initialize an FSDP-wrapped model with an ignored module that includes
         # both parameters and a buffer
         model = Model(
@@ -1106,6 +1117,7 @@ class TestFSDPStateDict(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_local_state_dict_with_empty_ranks(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         class Model(Module):
             def __init__(self):
                 super().__init__()
@@ -1132,6 +1144,7 @@ class TestFSDPStateDict(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_torch_save_load(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = Model(wrap_fsdp=True).to(device_hpu)
         with FSDP.state_dict_type(model, StateDictType.LOCAL_STATE_DICT):
             state_dict = model.state_dict()
@@ -1165,6 +1178,7 @@ class TestFSDPStateDict(FSDPTest):
             def get_input(self):
                 return torch.rand(8, 8, device="hpu")
 
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = FSDP(TestDummyModel().to(device_hpu))
         with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT):
             state_dict = model.state_dict()
@@ -1176,10 +1190,10 @@ class TestFSDPStateDict(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_sharded_load_multi_backend_pg(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         auto_wrap_policy = ModuleWrapPolicy(
             {TransformerEncoderLayer, TransformerDecoderLayer}
         )
-        device_id = f'{device_hpu}:{self.rank}'
         fsdp_kwargs = {
             "auto_wrap_policy": auto_wrap_policy,
             "use_orig_params": True,
