@@ -16,6 +16,7 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TEST_WITH_DEV_DBG_ASAN,
 )
+import habana_frameworks.torch as ht
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -87,9 +88,9 @@ class Model(torch.nn.Module):
     @staticmethod
     def wrap(sharding_strategy: ShardingStrategy, device: torch.device):
         model = Model()
-        model.layer1 = FSDP(model.layer1, sharding_strategy=sharding_strategy)
-        model.layer2 = FSDP(model.layer2, sharding_strategy=sharding_strategy)
-        fsdp_model = FSDP(model, sharding_strategy=sharding_strategy)
+        model.layer1 = FSDP(model.layer1, sharding_strategy=sharding_strategy, device_id=device)
+        model.layer2 = FSDP(model.layer2, sharding_strategy=sharding_strategy, device_id=device)
+        fsdp_model = FSDP(model, sharding_strategy=sharding_strategy,device_id=device)
         return fsdp_model.to(device)
 
 
@@ -99,7 +100,7 @@ class TestFSDPExecOrder(FSDPTest):
 
     @property
     def device(self):
-        return torch.device("cuda")
+        return torch.device("hpu", ht.hpu.current_device())
 
     @skip_if_lt_x_gpu(2)
     @parametrize(
