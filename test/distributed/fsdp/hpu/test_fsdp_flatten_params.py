@@ -14,6 +14,8 @@ from torch.distributed.fsdp.flat_param import (
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -39,7 +41,7 @@ class TestFlattenParams(FSDPTest):
 
     def _get_default_config(self):
         return {
-            "device": torch.device("cuda"),
+            "device": torch.device("hpu"),
             "sharding_strategy": HandleShardingStrategy.FULL_SHARD,
             "offload_params": False,
             "mp_param_dtype": None,
@@ -77,7 +79,6 @@ class TestFlattenParams(FSDPTest):
             dec_layer.linear2.weight = enc_layer.linear2.weight
         return module
 
-    @skip_if_lt_x_gpu(1)
     def test_partial_flattening(self):
         """Tests flattening some submodules but not others."""
         self.run_subtests(
@@ -96,8 +97,9 @@ class TestFlattenParams(FSDPTest):
         params_to_flatten = encoder_1_params + decoder_0_params
         num_params = [len(encoder_1_params), len(decoder_0_params)]
         numel_to_flatten = sum(p.numel() for p in params_to_flatten)
-        module.encoder.layers[1] = FSDP(module.encoder.layers[1])
-        module.decoder.layers[0] = FSDP(module.decoder.layers[0])
+        device_id = f'{device_hpu}'
+        module.encoder.layers[1] = FSDP(module.encoder.layers[1], device_id=device_hpu)
+        module.decoder.layers[0] = FSDP(module.decoder.layers[0], device_id=device_hpu)
         flat_params = [
             module.encoder.layers[1]._flat_param,
             module.decoder.layers[0]._flat_param,
@@ -158,7 +160,6 @@ class TestFlattenParams(FSDPTest):
                 **self._get_default_config(),
             )
 
-    @skip_if_lt_x_gpu(1)
     def test_empty_module(self):
         """
         Tests flattening an empty module (i.e. one without any parameters).
@@ -166,7 +167,8 @@ class TestFlattenParams(FSDPTest):
         module = self._get_empty_module()
         in_data = torch.rand(1)
         ref_out = module(in_data)
-        fsdp_module = FSDP(module)
+        device_id = f'{device_hpu}'
+        fsdp_module = FSDP(module, device_id=device_hpu)
         self.assertEqual(len(list(fsdp_module.parameters())), 0)
         self.assertIsNone(fsdp_module._flat_param)
         fsdp_out = fsdp_module(in_data)
@@ -228,7 +230,6 @@ class TestFlattenParams(FSDPTest):
         )
         self.assertEqual(ref_numel, flat_param_handle.flat_param.numel())
 
-    @skip_if_lt_x_gpu(1)
     def test_output_without_shared_params(self):
         """
         Tests a forward pass after flattening when there are no shared
@@ -245,7 +246,6 @@ class TestFlattenParams(FSDPTest):
             module = module.half()
         self._test_output(module)
 
-    @skip_if_lt_x_gpu(1)
     def test_output_with_shared_params(self):
         """
         Tests a forward pass after flattening when there are shared parameters
@@ -263,19 +263,20 @@ class TestFlattenParams(FSDPTest):
         self._test_output(module)
 
     def _test_output(self, module: nn.Module):
-        module = module.to(self.rank)
+        module = module.to(device_hpu)
+        device_id = f'{device_hpu}'
         ref_output = self._get_output(module)
-        fsdp_module = FSDP(module)
+        fsdp_module = FSDP(module, device_id=device_hpu)
         fsdp_output = self._get_output(fsdp_module)
         self.assertEqual(ref_output, fsdp_output)
 
     def _get_output(self, module):
         device = next(module.parameters()).device
+        print("_get_output*****", device)
         dtype = next(module.parameters()).dtype
         input = module.get_input(device, dtype)
         return module(*input)
 
-    @skip_if_lt_x_gpu(1)
     def test_pnorm_after_step_with_shared_params(self):
         """
         Tests for parameter Frobenius norm parity after an optimizer step when
@@ -288,14 +289,15 @@ class TestFlattenParams(FSDPTest):
         )
 
     def _test_pnorm_after_step_with_shared_params(self, half: bool):
-        module = self._get_shared_params_transformer().to(self.rank)
+        module = self._get_shared_params_transformer().to(device_hpu)
         if half:
             module = module.half()
         ref_pnorm_after_step = self._get_pnorm_after_step(module)
-        module = self._get_shared_params_transformer().to(self.rank)  # recreate
+        module = self._get_shared_params_transformer().to(device_hpu)  # recreate
         if half:
             module = module.half()
-        fsdp_module = FSDP(module)
+        device_id = f'{device_hpu}:{self.rank}'
+        fsdp_module = FSDP(module, device_id=device_hpu)
         fsdp_pnorm_after_step = self._get_pnorm_after_step(fsdp_module)
         self.assertEqual(ref_pnorm_after_step, fsdp_pnorm_after_step)
 
