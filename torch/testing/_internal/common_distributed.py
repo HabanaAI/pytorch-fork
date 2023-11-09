@@ -48,6 +48,7 @@ from torch.testing._internal.distributed.multi_threaded_pg import (
 )
 import operator
 
+import habana_frameworks.torch as ht
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ class DistTestCases:
     backend_feature["cuda"] = {"nccl", "gloo", "ucc"}
     backend_feature["ddp"] = {"nccl", "gloo", "ucc"}
     backend_feature["subgroup"] = {"nccl", "gloo", "ucc"}
+    backend_feature["hpu"] = {"hccl"}
     backend_feature["plugin"] = set()
 
 
@@ -106,8 +108,8 @@ def skip_if_no_gpu(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if not torch.cuda.is_available():
-            sys.exit(TEST_SKIPS["no_cuda"].exit_code)
+        if not ht.hpu.is_available():
+            sys.exit(TEST_SKIPS["no_hpu"].exit_code)
         world_size = int(os.environ["WORLD_SIZE"])
         if torch.cuda.device_count() < world_size:
             sys.exit(TEST_SKIPS[f"multi-gpu-{world_size}"].exit_code)
@@ -176,7 +178,7 @@ def skip_if_lt_x_gpu(x):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            if torch.cuda.is_available() and torch.cuda.device_count() >= x:
+            if ht.hpu.is_available() and ht.hpu.device_count() >= x:
                 return func(*args, **kwargs)
             sys.exit(TEST_SKIPS[f"multi-gpu-{x}"].exit_code)
 
@@ -459,7 +461,7 @@ def init_multigpu_helper(world_size: int, backend: str):
     On a single node, all visible GPUs are evenly
     divided to subsets, each process only uses a subset.
     """
-    nGPUs = torch.cuda.device_count()
+    nGPUs = ht.hpu.device_count()
     visible_devices = range(nGPUs)
 
     # If rank is less than or equal to number of available GPU's
@@ -1218,11 +1220,12 @@ class SaveForwardInputsModel(nn.Module):
 def _dynamo_dist_per_rank_init(rank, world_size, init_pg=True):
     # To avoid multiple inheritance from _dynamo.test_case.TestCase and MultiProcessTestCase,
     # Just manually implement the most important part of the dynamo behavior to reset/clear.
-    torch.cuda.set_device(rank)
+    #torch.cuda.set_device(rank)
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '6789'
+    import habana_frameworks.torch.distributed.hccl
     if init_pg:
-        c10d.init_process_group("nccl", rank=rank, world_size=world_size)
+        c10d.init_process_group("hccl", rank=rank, world_size=world_size)
     torch._dynamo.reset()
     torch._dynamo.utils.counters.clear()
     try:
@@ -1256,9 +1259,10 @@ class DynamoDistributedSingleProcTestCase(torch._dynamo.test_case.TestCase):
             )
         )
         cls.rank = 0
-        cls.device = f"cuda:{cls.rank}"
-        cls.device_ids = None if "cuda" in cls.device else [cls.rank]
-        c10d.init_process_group("nccl", rank=cls.rank, world_size=1)
+        cls.device = f"hpu:{cls.rank}"
+        cls.device_ids = None if "hpu" in cls.device else [cls.rank]
+        import habana_frameworks.torch.distributed.hccl
+        c10d.init_process_group("hccl", rank=cls.rank, world_size=1)
 
     @classmethod
     def tearDownClass(cls):
@@ -1289,7 +1293,7 @@ class DynamoDistributedMultiProcTestCase(MultiProcessTestCase):
 
     @property
     def world_size(self) -> int:
-        return torch.cuda.device_count()
+        return ht.hpu.device_count()
 
     @classmethod
     def _run(cls, rank: int, test_name: str, file_name: str, parent_pipe) -> None:

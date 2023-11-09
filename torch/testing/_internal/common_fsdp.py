@@ -64,6 +64,8 @@ from torch.testing._internal.common_utils import FILE_SCHEMA, get_cycles_per_ms
 from torch.utils._triton import has_triton
 
 
+device_hpu = torch.device('hpu')
+import habana_frameworks.torch as ht
 class FSDPInitMode(Enum):
     # No FSDP wrapping
     NO_FSDP = auto()
@@ -158,7 +160,7 @@ def _zero_model(
 
 def _get_state_dict(model, cpu_offload=False, half=False):
     if not cpu_offload:
-        model = model.cuda()
+        model = model.to(device_hpu)
     if half:
         model.half()
 
@@ -184,7 +186,7 @@ def _broadcast_state_dict(rank, state_dict):
     state_dict = olist[0]
     # Ensure that the state is on CUDA
     for param_name in state_dict.keys():
-        state_dict[param_name] = state_dict[param_name].cuda()
+        state_dict[param_name] = state_dict[param_name].to(device_hpu)
     return state_dict
 
 
@@ -203,7 +205,7 @@ def get_full_params(model: nn.Module, recurse: bool = True):
 
 
 def _maybe_cuda(model: nn.Module, move_to_cuda: bool):
-    return model.cuda() if move_to_cuda else model
+    return model.to(device_hpu) if move_to_cuda else model
 
 
 def _maybe_wrap_fsdp(model: nn.Module, wrap_fsdp: bool, *args, **kwargs):
@@ -272,7 +274,7 @@ class TransformerWithSharedParams(FSDPTestModel):
         self.bs = 2
         self.bn = torch.nn.BatchNorm1d(self.bs) if add_bn else torch.nn.Identity()
         if cuda_init_mode == CUDAInitMode.CUDA_BEFORE:
-            self = self.cuda()
+            self = self.to(device_hpu)
         if deterministic:
             self.eval()
 
@@ -373,7 +375,7 @@ class TransformerWithSharedParams(FSDPTestModel):
                 **fsdp_kwargs,
             )
             if cuda_init_mode == CUDAInitMode.CUDA_AFTER:
-                fsdp_model = fsdp_model.cuda()
+                fsdp_model = fsdp_model.to(device_hpu)
             return fsdp_model
         raise ValueError(f"Unsupported FSDP init mode: {fsdp_init_mode}")
 
@@ -470,7 +472,7 @@ class NestedWrappedModule(FSDPTestModel):
                 **fsdp_kwargs,
             )
             if cuda_init_mode == CUDAInitMode.CUDA_AFTER:
-                fsdp_model = fsdp_model.cuda()
+                fsdp_model = fsdp_model.to(device_hpu)
             return fsdp_model
         raise ValueError(f"Unsupported FSDP init mode: {fsdp_init_mode}")
 
@@ -505,7 +507,7 @@ class AlwaysWrapNestedWrappedModule(NestedWrappedModule):
             fsdp_kwargs = fsdp_kwargs or {}
             fsdp_model = FSDP(model, auto_wrap_policy=always_wrap_policy, **fsdp_kwargs)
             if cuda_init_mode == CUDAInitMode.CUDA_AFTER:
-                fsdp_model = fsdp_model.cuda()
+                fsdp_model = fsdp_model.to(device_hpu)
             return fsdp_model
 
 
@@ -599,7 +601,7 @@ class NonUniformReqGradNWM(NestedWrappedModule):
                 **fsdp_kwargs,
             )
             if cuda_init_mode == CUDAInitMode.CUDA_AFTER:
-                fsdp_model = fsdp_model.cuda()
+                fsdp_model = fsdp_model.to(device_hpu)
             NonUniformReqGradNWM._set_nonuniform_req_grad(fsdp_model, req_grad_pattern)
             return fsdp_model
         raise ValueError(f"Unsupported FSDP init mode: {fsdp_init_mode}")
@@ -839,7 +841,7 @@ class MixtureOfExperts(NestedWrappedModule):
                 **fsdp_kwargs,
             )
             if cuda_init_mode == CUDAInitMode.CUDA_AFTER:
-                fsdp_model = fsdp_model.cuda()
+                fsdp_model = fsdp_model.to(device_hpu)
             return fsdp_model
         raise ValueError(f"Unsupported FSDP init mode: {fsdp_init_mode}")
 
@@ -1137,7 +1139,7 @@ class FSDPTest(MultiProcessTestCase):
 
         # Specify gloo backend to make 'init_process_group()' succeed,
         # Actual tests will be skipped if there is no enough GPUs.
-        backend = "nccl" if torch.cuda.is_available() else "gloo"
+        backend = "hccl" if ht.hpu.is_available() else "gloo"
 
         try:
             dist.init_process_group(
@@ -1158,6 +1160,11 @@ class FSDPTest(MultiProcessTestCase):
             torch.cuda.set_device(device_id)
             device_ids = [device_id]
 
+        if torch.hpu.is_available() and torch.hpu.device_count():
+            device_id = self.rank % torch.hpu.device_count()
+            torch.hpu.set_device(device_id)
+            device_ids = [device_id]
+            
         # Execute barrier prior to running test to ensure that every process
         # has finished initialization and that the following test
         # immediately exiting due to a skip doesn't cause flakiness.
@@ -1356,7 +1363,7 @@ class FSDPTest(MultiProcessTestCase):
             # Change the model parameter dtype after FSDP initialization
             fsdp_model = fsdp_model.half()
         if cuda_init_mode == CUDAInitMode.CUDA_AFTER:
-            fsdp_model = fsdp_model.cuda()
+            fsdp_model = fsdp_model.to(device_hpu)
         offload_params = cpu_offload is not None and cpu_offload.offload_params
         # Offloading parameters with `CUDA_AFTER` should raise an error during
         # lazy initialization due to the parameter devices not being CPU;
@@ -1402,7 +1409,7 @@ class FSDPTest(MultiProcessTestCase):
             cpu_device = torch.device("cpu")
             for param in fsdp_model.parameters():
                 self.assertEqual(param.device, cpu_device)
-            fsdp_loss = fsdp_loss.cuda()
+            fsdp_loss = fsdp_loss.to(device_hpu)
         fsdp_unsharded_params = get_full_params(fsdp_model)
         # Do not check dtype since the reference DDP loss may not be the same
         # dtype as the FSDP loss in the case of mixed precision
@@ -1487,9 +1494,9 @@ class NestedLinear(nn.Module):
     def __init__(self, fsdp_wrap):
         super().__init__()
         if fsdp_wrap:
-            self.nested_linear = wrap(nn.Linear(10, 10, bias=False).cuda())
+            self.nested_linear = wrap(nn.Linear(10, 10, bias=False).to(device_hpu))
         else:
-            self.nested_linear = nn.Linear(10, 10, bias=False).cuda()
+            self.nested_linear = nn.Linear(10, 10, bias=False).to(device_hpu)
 
     def forward(self, x):
         return self.nested_linear(x)
@@ -1498,9 +1505,10 @@ class NestedLinear(nn.Module):
 class SkipModel(nn.Module):
     def __init__(self, double_nest):
         super().__init__()
-        self.linear = nn.Linear(10, 10, bias=False).cuda()
-        self.linear_skip = SkipModule().cuda()
-        self.nested_linear = wrap(NestedLinear(fsdp_wrap=double_nest))
+        self.linear = nn.Linear(10, 10, bias=False).to(device_hpu)
+        self.linear_skip = SkipModule().to(device_hpu)
+        device_id = f'{device_hpu}'
+        self.nested_linear = wrap(NestedLinear(fsdp_wrap=double_nest), device_id=device_hpu)
 
     def forward(self, x):
         x = self.linear(x)
