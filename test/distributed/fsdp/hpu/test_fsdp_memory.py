@@ -99,6 +99,8 @@ def create_model(with_fsdp, with_checkpoint, model_hidden_dim):
 
     return model
 
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu",  ht.hpu.current_device())
 
 class TestFSDPMemory(FSDPTest):
     @property
@@ -109,14 +111,14 @@ class TestFSDPMemory(FSDPTest):
         gpu_id = self.rank
         world_size = self.world_size
 
-        batch = torch.randn(size=(2, 3, 224, 224)).cuda()
+        batch = torch.randn(size=(2, 3, 224, 224)).to(device_hpu)#cuda()
 
         model = create_model(
             with_fsdp=True,
             with_checkpoint=with_checkpoint,
             model_hidden_dim=model_hidden_dim,
         )
-        model = model.cuda()
+        model = model.to(device_hpu)
         model = FSDP(model)
 
         # We enable momentum so that after the first iteration, the optimizer state is added
@@ -132,7 +134,7 @@ class TestFSDPMemory(FSDPTest):
             get_cur_mem(gpu_id, results, f"iter {iteration}: after fwd")
 
             out = sum(o.sum() for o in out[0])
-            fake_loss = criterion(out, torch.tensor(0.0).cuda())
+            fake_loss = criterion(out, torch.tensor(0.0).to(device_hpu))
             get_cur_mem(gpu_id, results, f"iter {iteration}: after loss")
 
             fake_loss.backward()
@@ -165,8 +167,8 @@ class TestFSDPMemory(FSDPTest):
 
         model = create_model(
             with_fsdp=False, with_checkpoint=False, model_hidden_dim=model_hidden_dim
-        ).cuda()
-        model_size_mb = round(torch.cuda.memory_allocated() / 1024 / 1024)
+        ).to(device_hpu)()
+        model_size_mb = round(ht.hpu.memory_allocated() / 1024 / 1024)
         del model
 
         sharded_model_size_mb = int(model_size_mb / self.world_size)

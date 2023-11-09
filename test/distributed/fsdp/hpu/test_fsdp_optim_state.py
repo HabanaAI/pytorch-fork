@@ -302,6 +302,8 @@ class TestDummyModel(torch.nn.Module):
     def get_input(self):
         return torch.rand(8, 8, device="cuda")
 
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu", ht.hpu.current_device())
 
 class TestFSDPOptimState(FSDPTest):
     def __init__(self, *args, **kwargs):
@@ -315,7 +317,7 @@ class TestFSDPOptimState(FSDPTest):
         self,
         wrap: bool,
         wrap_alt: bool = False,  # ignored if `wrap=False`
-        device: torch.device = torch.device("cuda"),
+        device: torch.device = torch.device("hpu", ht.hpu.current_device()),
         group=None,
         optim_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         use_multiple_param_groups: bool = False,

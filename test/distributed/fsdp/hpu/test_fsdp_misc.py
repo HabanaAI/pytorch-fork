@@ -45,6 +45,9 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu",  ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -89,9 +92,9 @@ class TestFSDPMiscMultiProcess(FSDPTest):
           without specifying a device ID (i.e. ``torch.device("cuda")``) warns
         """
         dev_id = (
-            torch.cuda.current_device()
+            device_hpu
             if use_index
-            else torch.device("cuda", torch.cuda.current_device())
+            else torch.device("hpu", ht.hpu.current_device())
         )
 
         def _check_device_matches(module, device_id):
@@ -104,7 +107,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
             self.assertEqual(1, len(devices))
             found_device = devices.pop()
             if use_index and not isinstance(device_id, torch.device):
-                device = torch.device("cuda", device_id)
+                device = torch.device("hpu", device_id)
             else:
                 device = device_id
             self.assertEqual(found_device, device)
@@ -136,10 +139,10 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 self.process_group,
                 FSDPInitMode.RECURSIVE,
                 CUDAInitMode.CUDA_BEFORE,
-                fsdp_kwargs={"device_id": torch.device("cuda")},
+                fsdp_kwargs={"device_id": torch.device("hpu")},
             )
         _check_device_matches(
-            nested_wrapped_module, torch.device("cuda", torch.cuda.current_device())
+            nested_wrapped_module, torch.device("hpu", ht.hpu.current_device())
         )
 
     @skip_if_lt_x_gpu(2)
@@ -165,12 +168,12 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                     return out1
 
         fsdp = FSDP(
-            MyModel().cuda(),
+            MyModel().to(device_hpu),
             sharding_strategy=sharding_strategy,
             auto_wrap_policy=always_wrap_policy,
         )
-        x = torch.randn(10, 10, device="cuda")
-        y = torch.randn(10, 10, device="cuda")
+        x = torch.randn(10, 10, device="hpu")
+        y = torch.randn(10, 10, device="hpu")
         for i in range(4):
             if use_second_layer:
                 a, b = fsdp(x, y)
@@ -229,7 +232,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                     torch.testing.assert_close(p1, p2)
 
         fsdp_ctor = functools.partial(FSDP, sharding_strategy=sharding_strategy)
-        m = MyModule().cuda()
+        m = MyModule().to(device_hpu)
         m_local = deepcopy(m)
         local_m = m_local
         prev_params = [p.clone() for p in m_local.parameters()]
@@ -242,7 +245,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
         opt_local = torch.optim.SGD(local_m.parameters(), lr=1e-3)
 
         for i in range(6):
-            t = torch.ones(4, device="cuda")
+            t = torch.ones(4, device="hpu")
             a, b = m(t)
             local_a, local_b = local_m(t)
             if i < 2:
@@ -278,7 +281,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
     @skip_if_lt_x_gpu(2)
     def test_fsdp_optim_overlap_no_use_orig_params_error(self):
         fsdp_overlap = FSDP(
-            MyModel().cuda(),
+            MyModel().to(device_hpu),
             auto_wrap_policy=always_wrap_policy,
             use_orig_params=False,
         )
@@ -291,7 +294,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
             register_hook=False,
         )
 
-        inp = torch.randn(10, 10, device="cuda")
+        inp = torch.randn(10, 10, device="hpu")
         with self.assertRaisesRegex(
             RuntimeError, "only supported with use_orig_params=True"
         ):
@@ -302,16 +305,16 @@ class TestFSDPMiscMultiProcess(FSDPTest):
         torch.manual_seed(0)
         for cpu_offload in [True, False]:
             offload = CPUOffload(offload_params=cpu_offload)
-            model = MyModel().cuda()
+            model = MyModel().to(device_hpu)
             model_overlap = deepcopy(model)
             fsdp = FSDP(
-                model.cuda(),
+                model.to(device_hpu),
                 auto_wrap_policy=always_wrap_policy,
                 use_orig_params=True,
                 cpu_offload=offload,
             )
             fsdp_overlap = FSDP(
-                model_overlap.cuda(),
+                model_overlap.to(device_hpu),
                 auto_wrap_policy=always_wrap_policy,
                 use_orig_params=True,
                 cpu_offload=offload,
@@ -338,7 +341,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 ]
 
             for i in range(6):
-                inp = torch.randn(2, 2, device="cuda")
+                inp = torch.randn(2, 2, device="hpu")
                 with torch.no_grad():
                     inp_clone = inp.clone()
                 fsdp(inp, inp).sum().backward()
@@ -420,7 +423,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
         devices = {p.device for p in fsdp_model.parameters()}
         self.assertEqual(1, len(devices))
         self.assertEqual(torch.device("cpu"), devices.pop())
-        fsdp_model = fsdp_model.cuda()
+        fsdp_model = fsdp_model.to(device_hpu)
         # Ensure fwd + backward can be performed after moving to CUDA.
         # CPU input also tests that input is correctly moved to appropriate
         # CUDA device.
@@ -465,19 +468,19 @@ class TestFSDPMiscMultiProcess(FSDPTest):
             nested_wrapped_module,
             self.process_group,
             auto_wrap_policy=ModuleWrapPolicy({nn.Linear}),
-            device_id=torch.cuda.current_device(),
+            device_id=device_hpu,
             sync_module_states=True,
         )
         # Each rank's buffers should be 0s since rank 0 is the source, and they
         # should be on GPU since we specified `device_id`
         self.assertEqual(
             nested_wrapped_module.buf.device,
-            torch.device("cuda", torch.cuda.current_device()),
+            torch.device("hpu", ht.hpu.current_device()),
         )
         self.assertEqual(nested_wrapped_module.buf, torch.zeros((2, 2)))
         self.assertEqual(
             nested_wrapped_module.module.module[0].buf.device,
-            torch.device("cuda", torch.cuda.current_device()),
+            torch.device("hpu", ht.hpu.current_device()),
         )
         self.assertEqual(
             nested_wrapped_module.module.module[0].buf, torch.zeros((3, 2))
@@ -503,9 +506,9 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
             def forward(self, x):
                 return x
 
-        m = MyModule().cuda()
+        m = MyModule().to(device_hpu)#cuda()
         m = FSDP(m)
-        t = torch.ones(1, device="cuda", requires_grad=True)
+        t = torch.ones(1, device="hpu", requires_grad=True)
 
         MyOutputType = namedtuple(
             "MyOutputType", ["a", "b", "c", "d"], defaults=(t, t, t, t)
@@ -542,7 +545,7 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
             auto_wrap_policy = ModuleWrapPolicy(module_classes)
         fsdp_kwargs = {
             "auto_wrap_policy": auto_wrap_policy,
-            "device_id": torch.cuda.current_device(),
+            "device_id": device_hpu,
         }
         fsdp_model = TransformerWithSharedParams.init(
             self.process_group,
@@ -553,7 +556,7 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
         for fsdp_module in FSDP.fsdp_modules(fsdp_model):
             self.assertEqual(
                 fsdp_module.compute_device,
-                torch.device("cuda", torch.cuda.current_device()),
+                torch.device("hpu", ht.hpu.current_device()),
             )
 
     @skip_if_lt_x_gpu(2)
@@ -588,7 +591,7 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
             model,
             auto_wrap_policy=auto_wrap_policy,
             cpu_offload=CPUOffload(offload_params=True),
-            device_id=torch.cuda.current_device(),
+            device_id=device_hpu,
             use_orig_params=use_orig_params,
         )
         cpu_device = torch.device("cpu")
@@ -801,7 +804,7 @@ class TestFSDPMiscWorldSize1(FSDPTestMultiThread):
         # warning
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")  # trigger all warnings
-            FSDP(nn.Linear(3, 3).cuda(), sharding_strategy=ShardingStrategy.NO_SHARD)
+            FSDP(nn.Linear(3, 3).to("hpu"), sharding_strategy=ShardingStrategy.NO_SHARD)
             for warning in w:
                 self.assertTrue(
                     warning.category != UserWarning
@@ -815,16 +818,16 @@ class TestFSDPMiscWorldSize1(FSDPTestMultiThread):
             warning_prefix + " " + str(ShardingStrategy.FULL_SHARD) + warning_suffix
         )
         with self.assertWarnsRegex(UserWarning, expected_regex_full_shard):
-            FSDP(nn.Linear(3, 3).cuda(), sharding_strategy=ShardingStrategy.FULL_SHARD)
+            FSDP(nn.Linear(3, 3).to("hpu"), sharding_strategy=ShardingStrategy.FULL_SHARD)
         with self.assertWarnsRegex(UserWarning, expected_regex_full_shard):
-            FSDP(nn.Linear(3, 3).cuda())
+            FSDP(nn.Linear(3, 3).to("hpu"))
         # - Pass `SHARD_GRAD_OP`
         expected_regex_shard_grad_op = (
             warning_prefix + " " + str(ShardingStrategy.SHARD_GRAD_OP) + warning_suffix
         )
         with self.assertWarnsRegex(UserWarning, expected_regex_shard_grad_op):
             FSDP(
-                nn.Linear(3, 3).cuda(), sharding_strategy=ShardingStrategy.SHARD_GRAD_OP
+                nn.Linear(3, 3).to("hpu"), sharding_strategy=ShardingStrategy.SHARD_GRAD_OP
             )
 
     @skip_if_lt_x_gpu(1)
@@ -836,7 +839,8 @@ class TestFSDPMiscWorldSize1(FSDPTestMultiThread):
         """
         # Incorrectly not moving from CPU -> GPU
         model = torch.nn.Linear(10, 10)
-        fsdp_model = FSDP(model)
+        device_id = f'{device_hpu}'
+        fsdp_model = FSDP(model, device_id=device_hpu)
         inp = torch.randn((2, 10))
         with self.assertRaisesRegex(
             RuntimeError,
@@ -848,7 +852,7 @@ class TestFSDPMiscWorldSize1(FSDPTestMultiThread):
         # Incorrectly moving from CPU -> GPU
         model = torch.nn.Linear(10, 10)
         fsdp_model = FSDP(model, cpu_offload=CPUOffload(offload_params=True))
-        fsdp_model.to(torch.device("cuda"))
+        fsdp_model.to(device_hpu)
         inp = torch.randn((2, 10))
         with self.assertRaisesRegex(
             RuntimeError,
@@ -889,16 +893,16 @@ class TestFSDPMiscWorldSize1(FSDPTestMultiThread):
 
         # Construct FSDP module without changing any environment variables and
         # run forward, which triggers both unsharded and sharded view setting
-        module = SetattrLinear(5, 5, torch.device("cuda"))
+        module = SetattrLinear(5, 5, torch.device("hpu"))
         fsdp_module = FSDP(module, use_orig_params=use_orig_params)
-        inp = torch.randn((8, 5), device=torch.device("cuda"))
+        inp = torch.randn((8, 5), device=torch.device("hpu"))
         called_setattr_override = False
         fsdp_module(inp)
         self.assertTrue(called_setattr_override)
 
         # Repeat with unsafe setattr explicitly enabled
         os.environ[_FSDP_USE_UNSAFE_SETATTR] = "1"
-        module = SetattrLinear(5, 5, torch.device("cuda"))
+        module = SetattrLinear(5, 5, torch.device("hpu"))
         fsdp_module = FSDP(module, use_orig_params=use_orig_params)
         called_setattr_override = False
         fsdp_module(inp)
@@ -906,7 +910,7 @@ class TestFSDPMiscWorldSize1(FSDPTestMultiThread):
 
         # Repeat with unsafe setattr explicitly disabled
         os.environ[_FSDP_USE_UNSAFE_SETATTR] = "0"
-        module = SetattrLinear(5, 5, torch.device("cuda"))
+        module = SetattrLinear(5, 5, torch.device("hpu"))
         fsdp_module = FSDP(module, use_orig_params=use_orig_params)
         called_setattr_override = False
         fsdp_module(inp)

@@ -28,6 +28,8 @@ if TEST_WITH_DEV_DBG_ASAN:
     )
     sys.exit(0)
 
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu",  ht.hpu.current_device())
 
 class TestInput(FSDPTest):
     @property
@@ -51,12 +53,15 @@ class TestInput(FSDPTest):
                     assert isinstance(input, dict), input
                     input = input["in"]
                 return self.layer(input)
+        fsdp_kwargs = {
+            "device_id": device_hpu,
+        }
 
-        model = FSDP(Model()).cuda()
+        model = FSDP(Model().to(device_hpu), **fsdp_kwargs)
         optim = SGD(model.parameters(), lr=0.1)
 
         for _ in range(5):
-            in_data = torch.rand(64, 4).cuda()
+            in_data = torch.rand(64, 4).to(device_hpu)
             in_data.requires_grad = True
             if input_cls is list:
                 in_data = [in_data]
