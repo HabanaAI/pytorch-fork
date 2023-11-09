@@ -40,6 +40,8 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+
 STATE_DICT_TYPES = [StateDictType.FULL_STATE_DICT, StateDictType.SHARDED_STATE_DICT]
 
 if not dist.is_available():
@@ -300,10 +302,8 @@ class TestDummyModel(torch.nn.Module):
         return self.net4(self.net3(self.net2(self.net1(x))))
 
     def get_input(self):
-        return torch.rand(8, 8, device="cuda")
+        return torch.rand(8, 8, device=torch.device("hpu", ht.hpu.current_device()))
 
-import habana_frameworks.torch as ht
-device_hpu = torch.device("hpu", ht.hpu.current_device())
 
 class TestFSDPOptimState(FSDPTest):
     def __init__(self, *args, **kwargs):
@@ -317,20 +317,21 @@ class TestFSDPOptimState(FSDPTest):
         self,
         wrap: bool,
         wrap_alt: bool = False,  # ignored if `wrap=False`
-        device: torch.device = torch.device("hpu", ht.hpu.current_device()),
+        device: torch.device = torch.device("hpu"),
         group=None,
         optim_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         use_multiple_param_groups: bool = False,
         use_diff_optim_inputs: bool = False,
         fsdp_kwargs: Optional[Dict[str, Any]] = None,
     ):
+        device = torch.device("hpu", ht.hpu.current_device())
         model = NestedModel().to(device)
         if wrap:
             model = (
                 NestedModel.wrap_alt(model, group, fsdp_kwargs)
                 if wrap_alt
                 else NestedModel.wrap(model, group, fsdp_kwargs=fsdp_kwargs)
-            )
+            ).to(device)
         if not use_multiple_param_groups:
             optim_input = list(model.parameters())
         else:
@@ -351,12 +352,13 @@ class TestFSDPOptimState(FSDPTest):
     def _init_transformer_model(
         self,
         wrap: bool,
-        device: torch.device = torch.device("cuda"),
+        device: torch.device = torch.device("hpu"),
         group=None,
         optim_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         use_multiple_param_groups: bool = False,
         use_diff_optim_inputs: bool = False,
     ):
+        device = torch.device("hpu", ht.hpu.current_device())
         if use_multiple_param_groups or use_diff_optim_inputs:
             # Keep these as arguments for parity with `_init_nested_model()`;
             # these settings are not implemented since the transformer is
@@ -370,7 +372,7 @@ class TestFSDPOptimState(FSDPTest):
             FSDPInitMode.RECURSIVE if wrap else FSDPInitMode.NO_FSDP,
             CUDAInitMode.CUDA_BEFORE,
             deterministic=True,
-        )
+        ).to(device)
         optim = optim_class(model.parameters(), lr=0.01)
         return model, optim, None
 
@@ -378,11 +380,12 @@ class TestFSDPOptimState(FSDPTest):
         self,
         model: torch.nn.Module,
         optim: torch.optim.Optimizer,
-        device: torch.device = torch.device("cuda"),
+        device: torch.device = torch.device("hpu"),
         num_iters: int = 1,
     ) -> List[float]:
         """Performs a forward pass, backward pass, and optimizer step
         ``num_iters``-many times, and returns the per-iteration losses."""
+        device = torch.device("hpu", ht.hpu.current_device())
         torch.manual_seed(0)  # set seed for determinism
         losses = []
         module = getattr(model, "module", model)
@@ -511,7 +514,6 @@ class TestFSDPOptimState(FSDPTest):
                     continue
                 self.assertEqual(full_osd_value, ref_osd_pg[name])
 
-    @skip_if_lt_x_gpu(2)
     @parametrize("state_dict_type", STATE_DICT_TYPES)
     @parametrize("use_multiple_param_groups", [False, True])
     @parametrize("rank0_only", [False, True])
@@ -611,7 +613,7 @@ class TestFSDPOptimState(FSDPTest):
         :meth:`full_optim_state_dict` match those of :meth:`state_dict` with
         full ``state_dict_type`` for a non-FSDP-root model with nested FSDP
         instances and ignored modules."""
-        device = torch.device("cuda")
+        device = torch.device("hpu", ht.hpu.current_device())
         model = NestedModel().to(device)
         wrapped_model = NestedModel.wrap(model, ignore_modules=True)
         # Add checkpointing to ensure optim_state_dict and state_dict strip out
@@ -636,7 +638,7 @@ class TestFSDPOptimState(FSDPTest):
         """Tests that :meth:`full_optim_state_dict` raises an error when
         nonzero ranks are missing the optimizer state for parameters on rank
         0."""
-        device = torch.device("cuda")
+        device = torch.device("hpu", ht.hpu.current_device())
         model = NestedModel.wrap(NestedModel().to(device), None)
         optim_input = list(model.parameters())
         if self.rank != 0:
@@ -1179,7 +1181,7 @@ class TestFSDPOptimState(FSDPTest):
             fsdp_osd = FSDP.sharded_optim_state_dict(model, optim)
         # Create a new model with the same structure but additional unmanaged
         # parameters, representing the model for which we want to load
-        device = torch.device("cuda")
+        device = torch.device("hpu", ht.hpu.current_device())
         model = NestedModel().to(device)
         model, unmanaged_params = NestedModel.wrap_with_unmanaged_params(
             model,
@@ -1537,7 +1539,7 @@ class TestFSDPOptimState(FSDPTest):
                 # is tensor or float
                 return self.relu(self.lin2(x))
 
-        model = Model().cuda()
+        model = Model().to(torch.device("hpu", ht.hpu.current_device()))
         model.lin1 = FSDP(model.lin1)
         model.lin2 = FSDP(model.lin2)
         fsdp_model = FSDP(model)
@@ -1546,7 +1548,7 @@ class TestFSDPOptimState(FSDPTest):
         )  # or any optimizer with "step"
 
         # Run an iteration to construct optimizer state
-        device = torch.device("cuda")
+        device = torch.device("hpu", ht.hpu.current_device())
         inp = torch.randn((2, 5), device=device)
         loss = fsdp_model(inp).sum()
         loss.backward()
@@ -1589,7 +1591,8 @@ class TestFSDPOptimState(FSDPTest):
             def __init__(self):
                 super().__init__()
                 torch.manual_seed(0)
-                self.dense = FSDP(DenseModel().cuda(), use_orig_params=True)
+                device_hpu = torch.device("hpu", ht.hpu.current_device())
+                self.dense = FSDP(DenseModel().to(device_hpu), use_orig_params=True)
                 if dist.get_rank() == 0:
                     self.sparse0 = nn.Sequential(nn.Linear(8, 8), nn.ReLU())
                 else:
@@ -1603,7 +1606,8 @@ class TestFSDPOptimState(FSDPTest):
                 dist.all_reduce(sparse)
                 return self.dense(sparse)
 
-        models = [FakeMPModel().cuda(), FakeMPModel().cuda()]
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        models = [FakeMPModel().to(device_hpu), FakeMPModel().to(device_hpu)]
         optims = [
             torch.optim.Adam(models[0].parameters(), lr=1e-2),
             _NamedOptimizer(
@@ -1617,7 +1621,7 @@ class TestFSDPOptimState(FSDPTest):
         state_dicts = []
 
         # Train one batch and see if optim_state_dict are the same.
-        batch = torch.rand(5, 8, device=torch.device("cuda"))
+        batch = torch.rand(5, 8, device=device_hpu)
         for model, optim in zip(models, optims):
             # Eagerly initialize the states
             for param in model.parameters():
@@ -1639,7 +1643,7 @@ class TestFSDPOptimState(FSDPTest):
 
         # Make optim1 has a different state.
         for i in range(5):
-            batch = torch.rand(5, 8).cuda()
+            batch = torch.rand(5, 8).to(device_hpu)
             loss = models[1](batch).sum()
             loss.backward()
             optims[1].step()
@@ -1669,11 +1673,12 @@ class TestFSDPOptimState(FSDPTest):
             def forward(self, x):
                 return self.net1(x)
 
-        model = FSDP(SimpleModel().cuda())
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        model = FSDP(SimpleModel().to(device_hpu))
         optim = torch.optim.Adam(model.parameters(), lr=1e-2)
 
         # Train one step to save original optimizer state dict and original optimizer param groups.
-        batch = torch.rand(3, 2, device=torch.device("cuda"))
+        batch = torch.rand(3, 2, device=torch.device("hpu", ht.hpu.current_device()))
         for param in model.parameters():
             if param.requires_grad:
                 t = torch.zeros_like(param)
@@ -1722,7 +1727,8 @@ class TestFSDPOptimState(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_with_empty_optimizer_state(self):
-        model = FSDP(TestDummyModel().cuda())
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        model = FSDP(TestDummyModel().to(device_hpu)).to(device_hpu)
         optim = torch.optim.Adam(model.parameters(), lr=1e-2)
         state_dict = optim.state_dict()
         gathered_state_dict = FSDP.optim_state_dict(model, optim)
@@ -1834,7 +1840,8 @@ class TestFSDPOptimState(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_interface_arguments(self):
-        model = FSDP(TestDummyModel().cuda())
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        model = FSDP(TestDummyModel().to(device_hpu))
         optim = torch.optim.Adam(model.parameters(), lr=1e-2)
 
         def step():
@@ -1862,7 +1869,8 @@ class TestFSDPOptimState(FSDPTest):
     @skip_if_lt_x_gpu(2)
     def test_state_dict_with_none_tensor_state(self):
         def _run_test(use_orig_params):
-            model = FSDP(TestDummyModel().cuda(), use_orig_params=use_orig_params)
+            device_hpu = torch.device("hpu", ht.hpu.current_device())
+            model = FSDP(TestDummyModel().to(device_hpu), use_orig_params=use_orig_params)
             optim = torch.optim.Adam(model.parameters(), lr=1e-2)
 
             def step():
@@ -1888,8 +1896,9 @@ class TestFSDPOptimState(FSDPTest):
     @skip_if_lt_x_gpu(2)
     def test_with_no_shard(self):
         def _run_test(use_orig_params: bool) -> None:
+            device_hpu = torch.device("hpu", ht.hpu.current_device())
             model = FSDP(
-                TestDummyModel().cuda(),
+                TestDummyModel().to(device_hpu),
                 sharding_strategy=ShardingStrategy.NO_SHARD,
                 use_orig_params=use_orig_params,
             )
