@@ -39,7 +39,8 @@ if TEST_WITH_DEV_DBG_ASAN:
         file=sys.stderr,
     )
     sys.exit(0)
-
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu",  ht.hpu.current_device())
 
 def _is_nested_tensor(val: Any) -> bool:
     if type(val) is ShardedTensor:
@@ -106,7 +107,7 @@ class TestTPFSDPIntegration(FSDPTest):
         """
         # 2-D mesh is [dp, tp]
         twod_mesh = DeviceMesh(
-            device_type="cuda",
+            device_type="hpu",
             mesh=torch.arange(0, self.world_size).view(-1, tensor_parallel_size),
         )
 
@@ -228,7 +229,7 @@ class TestTPFSDPIntegration(FSDPTest):
         )
         LR = 3e-5
         torch.manual_seed(0)
-        model = SimpleModel().cuda(self.rank)
+        model = SimpleModel().to(device_hpu)
         tp_fsdp_model = copy.deepcopy(model)
         sharded_param_names = SimpleModel.get_sharded_param_names()
         non_sharded_param_names = SimpleModel.get_non_sharded_param_names()
@@ -244,12 +245,13 @@ class TestTPFSDPIntegration(FSDPTest):
         input_seed = self.rank
         torch.manual_seed(input_seed + 1)
         inp_size = [2, 3, 5]
-        inp = torch.rand(*inp_size).cuda(self.rank)
+        inp = torch.rand(*inp_size).to(device_hpu)
         self.assertEqual(model(inp), tp_fsdp_model(inp))  # sanity check
 
         mesh_2d, fsdp_pg, tp_pg = self._get_sub_pgs(tensor_parallel_size)
         fsdp_model = FSDP(
-            model, process_group=self.process_group, cpu_offload=cpu_offload
+            model, process_group=self.process_group, cpu_offload=cpu_offload,
+            device_id=device_hpu
         )
         # Shard with TP and then wrap with FSDP
         tp_fsdp_model = parallelize_module(
@@ -258,7 +260,8 @@ class TestTPFSDPIntegration(FSDPTest):
         assert isinstance(tp_fsdp_model.net1.weight, DT)
         assert isinstance(tp_fsdp_model.net2.weight, DT)
         tp_fsdp_model = FSDP(
-            tp_fsdp_model, process_group=fsdp_pg, cpu_offload=cpu_offload
+            tp_fsdp_model, process_group=fsdp_pg, cpu_offload=cpu_offload,
+            device_id=device_hpu
         )
 
         # Check the forward by checking output equality
