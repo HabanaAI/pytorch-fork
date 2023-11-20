@@ -1552,10 +1552,11 @@ class TestFSDPOptimState(FSDPTest):
                 # is tensor or float
                 return self.relu(self.lin2(x))
 
-        model = Model().to(torch.device("hpu", ht.hpu.current_device()))
+        device = torch.device("hpu", ht.hpu.current_device())
+        model = Model().to(device)
         model.lin1 = FSDP(model.lin1)
         model.lin2 = FSDP(model.lin2)
-        fsdp_model = FSDP(model)
+        fsdp_model = FSDP(model,device_id=device)
         optim = torch.optim.Adam(
             fsdp_model.parameters(), lr=1e-2
         )  # or any optimizer with "step"
