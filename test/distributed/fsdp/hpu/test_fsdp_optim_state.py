@@ -179,7 +179,7 @@ class NestedModel(torch.nn.Module):
         fsdp_kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.nn.Module:
         if fsdp_kwargs is None:
-            fsdp_kwargs = {}
+            fsdp_kwargs = {"device_id":torch.device("hpu", ht.hpu.current_device())}
         # Flatten Bias0; then flatten weight and Bias1 together into `block1`
         model.block1.bias_module0 = FSDP(
             model.block1.bias_module0,
@@ -470,7 +470,7 @@ class TestFSDPOptimState(FSDPTest):
             for param_id, param_state in fsdp_osd_state.items():
                 for state_name, value in param_state.items():
                     ref_value = ref_osd_state[param_id][state_name]
-                    self.assertEqual(value, ref_value)
+                    self.assertEqual(value, ref_value, atol=a_tol, rtol= r_tol)
             return
         # Otherwise, only require the parameter keys to be isomorphic (e.g.
         # between IDs and names)
@@ -616,8 +616,8 @@ class TestFSDPOptimState(FSDPTest):
             fsdp_osd,
             ref_osd,
             check_same_param_keys=check_same_param_keys,
-            a_tol = 1e-02,
-            r_tol = 1e-01,
+            a_tol = 1e-04,
+            r_tol = 1e-04,
         )
 
     @skip_if_lt_x_gpu(2)
@@ -1010,6 +1010,7 @@ class TestFSDPOptimState(FSDPTest):
             use_multiple_param_groups=use_multiple_param_groups,
         )
         self._step_model(model1, optim1, num_iters=num_iters)
+
         fsdp_osd1 = (
             osd_method(model1, optim1, optim_input1)
             if use_optim_input
@@ -1119,6 +1120,8 @@ class TestFSDPOptimState(FSDPTest):
             sharded_osd2,
             local_osd2,
             check_same_param_keys=check_same_param_keys,
+            a_tol = 1e-04,
+            r_tol = 1e-04
         )
         # Check that sharding the first model's full/sharded optimizer state dict
         # according to the second model is equivalent to the second model's
@@ -1132,6 +1135,8 @@ class TestFSDPOptimState(FSDPTest):
             sharded_osd1,
             local_osd2,
             check_same_param_keys=check_same_param_keys,
+            a_tol = 1e-04,
+            r_tol = 1e-04
         )
         # As a sanity check, check that we can load and run a few iterations
         optim2.load_state_dict(sharded_osd2)
@@ -1336,6 +1341,8 @@ class TestFSDPOptimState(FSDPTest):
             rekeyed_osd,
             osd,
             check_same_param_keys=check_same_param_keys,
+            a_tol = 1e-04,
+            r_tol = 1e-04
         )
         # As a sanity check, check that we can load and run a few iterations
         if state_dict_type != StateDictType.SHARDED_STATE_DICT:
@@ -1420,6 +1427,8 @@ class TestFSDPOptimState(FSDPTest):
             sharded_osd,
             osd1,
             check_same_param_keys=check_same_param_keys,
+            a_tol = 1e-04,
+            r_tol = 1e-04
         )
         # As a sanity check, check that we can load and run a few iterations
         optim1.load_state_dict(sharded_osd)
@@ -1834,6 +1843,8 @@ class TestFSDPOptimState(FSDPTest):
             sharded_osd2,
             local_osd2,
             check_same_param_keys=True,
+            a_tol = 1e-04,
+            r_tol = 1e-04
         )
         # Check that sharding the first model's full/sharded optimizer state dict
         # according to the second model is equivalent to the second model's
@@ -1847,6 +1858,8 @@ class TestFSDPOptimState(FSDPTest):
             sharded_osd1,
             local_osd2,
             check_same_param_keys=True,
+            a_tol = 1e-04,
+            r_tol = 1e-04
         )
         # As a sanity check, check that we can load and run a few iterations
         optim2.load_state_dict(sharded_osd2)
