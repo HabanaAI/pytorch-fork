@@ -110,8 +110,6 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 device = torch.device("hpu", device_id)
             else:
                 device = device_id
-            print("******foubd_device", found_device)
-            print("******device", device)
             self.assertEqual(found_device, device)
 
         # Check that FSDP parameters are moved to `device_id` for a CPU module
@@ -676,7 +674,6 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
         with self.assertRaisesRegex(
             RuntimeError, "FSDP only supports single device modules"
         ):
-            print("**************Rank", self.rank)
             device_hpu = torch.device("hpu", self.rank)
             FSDP(MultiGPUModule(self.rank), device_id=device_hpu)
 
