@@ -51,7 +51,6 @@ from torch.testing._internal.common_utils import (
     TestCase,
 )
 import habana_frameworks.torch as ht
-device_hpu = torch.device("hpu", ht.hpu.current_device())
 
 class BatchNormNet(nn.Module):
     def __init__(self):
