@@ -691,7 +691,7 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
         device_hpu = torch.device("hpu", ht.hpu.current_device())
         # Test CPU
         no_params = nn.ReLU()
-        module = FSDP(no_params, device_id = device_hpu)
+        module = FSDP(no_params, device_id = torch.device("cpu"))
         # Test CUDA
         no_params = nn.ReLU().to(torch.device("hpu"))
         module = FSDP(no_params, device_id = device_hpu)

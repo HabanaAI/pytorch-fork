@@ -39,6 +39,9 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -228,6 +231,7 @@ class TestParityWithDDP(FSDPTest):
         cpu_offload: CPUOffload,
         sharding_strategy: Optional[ShardingStrategy],
     ):
+        fsdp_kwargs = {"device_id": device_hpu}
         self.run_subtests(
             self._get_subtest_config(cpu_offload),
             self._test_fsdp_parity,
@@ -236,6 +240,7 @@ class TestParityWithDDP(FSDPTest):
             ref_init_fn=self._dummy_ddp_fn,
             cpu_offload=cpu_offload,
             sharding_strategy=sharding_strategy,
+            **fsdp_kwargs
         )
 
     @skip_if_lt_x_gpu(2)
@@ -245,6 +250,7 @@ class TestParityWithDDP(FSDPTest):
         cpu_offload: CPUOffload,
         sharding_strategy: Optional[ShardingStrategy],
     ):
+        fsdp_kwargs = {"device_id": device_hpu}
         self.run_subtests(
             self._get_subtest_config(cpu_offload),
             self._test_fsdp_parity,
@@ -254,6 +260,7 @@ class TestParityWithDDP(FSDPTest):
             cpu_offload=cpu_offload,
             sharding_strategy=sharding_strategy,
             init_kwargs={"delay_before_free_ms": 250},
+            **fsdp_kwargs
         )
 
 
@@ -266,7 +273,7 @@ class TestParamInit(FSDPTest):
         initialization persist.
         """
         # Establish reference behavior
-        fsdp_kwargs = {}
+        fsdp_kwargs = {"device_id": device_hpu}
         if mixed_precision:
             fsdp_kwargs["mixed_precision"] = MixedPrecision()
         fsdp_model = TransformerWithSharedParams.init(
@@ -276,7 +283,7 @@ class TestParamInit(FSDPTest):
             fsdp_kwargs,
             deterministic=True,
         )
-        input = fsdp_model.module.get_input(torch.device("cuda"))
+        input = fsdp_model.module.get_input(torch.device("hpu"))
         ref_output = fsdp_model(*input)
         # Initialize the same model but change its first parameter value
         # in-place after FSDP initialization
@@ -303,10 +310,12 @@ class TestHooks(FSDPTest):
     def test_pre_backward_hook_registration(self, cuda_first: bool):
         """Tests that FSDP pre-backward hooks are registered on forward pass
         outputs."""
+        fsdp_kwargs = {"device_id": device_hpu}
         fsdp_model = TransformerWithSharedParams.init(
             self.process_group,
             FSDPInitMode.RECURSIVE,
             CUDAInitMode.CUDA_BEFORE if cuda_first else CUDAInitMode.CUDA_AFTER,
+            fsdp_kwargs,
         )
         self._test_pre_backward_hook_registration(fsdp_model)
 
@@ -314,10 +323,12 @@ class TestHooks(FSDPTest):
     def test_pre_backward_hook_registration_after_state_dict(self):
         """Tests that FSDP pre-backward hooks are registered on forward pass
         outputs after saving and loading the model from a checkpoint."""
+        fsdp_kwargs = {"device_id": device_hpu}
         fsdp_model = TransformerWithSharedParams.init(
             self.process_group,
             FSDPInitMode.RECURSIVE,
             CUDAInitMode.CUDA_AFTER,
+            fsdp_kwargs,
         )
         self._train_for_several_steps(fsdp_model, num_steps=2, autocast=False)
         state_dict = fsdp_model.state_dict()
@@ -328,11 +339,11 @@ class TestHooks(FSDPTest):
         optim = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
         optim.zero_grad()
         # Inputs always cuda, as computation happes on CUDA device only
-        input = model.module.get_input(torch.device("cuda"))
+        input = model.module.get_input(torch.device("hpu"))
         output = model(*input)
         # this is pre-bwd hook
         self.assertEqual(len(output._backward_hooks), 1)
-        loss = model.module.get_loss(input, output).cuda()
+        loss = model.module.get_loss(input, output).to(device_hpu)
         loss.backward()
         # It doesn't get removed
         self.assertEqual(len(output._backward_hooks), 1)
@@ -345,7 +356,7 @@ class TestHooks(FSDPTest):
     def test_register_functions_called(self, cuda_first: bool, mixed_precision: bool):
         """Tests that ``_register_{pre|post}_backward_hooks()`` are called
         during the FSDP forward."""
-        fsdp_kwargs = {}
+        fsdp_kwargs = {"device_id": device_hpu}
         if mixed_precision:
             fsdp_kwargs["mixed_precision"] = MixedPrecision()
         fsdp_model = TransformerWithSharedParams.init(
@@ -354,7 +365,7 @@ class TestHooks(FSDPTest):
             CUDAInitMode.CUDA_BEFORE if cuda_first else CUDAInitMode.CUDA_AFTER,
             fsdp_kwargs,
         )
-        input = fsdp_model.module.get_input(torch.device("cuda"))
+        input = fsdp_model.module.get_input(torch.device("hpu"))
 
         # Since `_register_pre_backward_hooks()` modifies the forward output,
         # we cannot directly mock it. We implement our own counter instead.
@@ -389,7 +400,7 @@ class TestNoGrad(FSDPTest):
         parameters, after training for one iteration, running a forward pass in
         ``eval()`` mode gives the same output as running a forward pass in
         ``torch.no_grad()``."""
-        fsdp_kwargs = {}
+        fsdp_kwargs = {"device_id": device_hpu}
         if mixed_precision:
             fsdp_kwargs["mixed_precision"] = MixedPrecision(
                 param_dtype=torch.float16,
@@ -410,7 +421,7 @@ class TestNoGrad(FSDPTest):
             autocast=False,
             mixed_precision=fsdp_kwargs["mixed_precision"],
         )
-        input = fsdp_model.module.get_input(torch.device("cuda"))
+        input = fsdp_model.module.get_input(torch.device("hpu"))
         # Run a forward in eval mode
         fsdp_model.eval()
         ref_output = fsdp_model(*input)
@@ -474,8 +485,9 @@ class TestAutograd(FSDPTest):
             "forward_prefetch": forward_prefetch,
             "backward_prefetch": backward_prefetch,
             "auto_wrap_policy": ModuleWrapPolicy({nn.Linear}),
+            "device_id": device_hpu,
         }
-        device = torch.device("cuda")
+        device = torch.device("hpu")
         # Define a model with enough FSDP instances to exercise prefetching
         NUM_LINEARS = 5
         model = nn.Sequential(
