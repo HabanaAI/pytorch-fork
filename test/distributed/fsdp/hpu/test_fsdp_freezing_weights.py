@@ -18,6 +18,9 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -44,8 +47,9 @@ class Model(nn.Module):
             self.fsdp_wrap()
 
     def fsdp_wrap(self):
-        self.trunk = FSDP(self.trunk)
-        self.head = FSDP(self.head)
+        fsdp_kwargs = {"device_id": device_hpu}
+        self.trunk = FSDP(self.trunk, **fsdp_kwargs)
+        self.head = FSDP(self.head, **fsdp_kwargs)
 
     def forward(self, x):
         return self.head(self.trunk(x))
@@ -67,11 +71,12 @@ class NestedTrunkModel(nn.Module):
             self.fsdp_wrap()
 
     def fsdp_wrap(self):
+        fsdp_kwargs = {"device_id": device_hpu}
         for name, child in self.trunk.named_children():
-            wrapped_child = FSDP(child)
+            wrapped_child = FSDP(child, **fsdp_kwargs)
             setattr(self.trunk, name, wrapped_child)
-        self.trunk = FSDP(self.trunk)
-        self.head = FSDP(self.head)
+        self.trunk = FSDP(self.trunk, **fsdp_kwargs)
+        self.head = FSDP(self.head, **fsdp_kwargs)
 
     def forward(self, x):
         return self.head(self.trunk(x))
@@ -103,10 +108,10 @@ class TestFreezingWeights(FSDPTest):
         self, with_nested_trunk, freezing_method, freeze_after_wrap_fsdp, with_fsdp
     ):
         torch.manual_seed(0)
-        batch = torch.randn(size=(2, 3, 224, 224)).cuda()
+        batch = torch.randn(size=(2, 3, 224, 224)).to(device_hpu)
 
         model = self._create_model(with_fsdp, with_nested_trunk, freeze_after_wrap_fsdp)
-        model = model.cuda()
+        model = model.to(device_hpu)
 
         # freezing the trunk using requires_grad.
         if freezing_method == FreezingMethod.RequiresGrad:
@@ -116,11 +121,12 @@ class TestFreezingWeights(FSDPTest):
         if with_fsdp:
             if not freeze_after_wrap_fsdp:
                 model.fsdp_wrap()
-            model = FSDP(model)
+            fsdp_kwargs = {"device_id": device_hpu}
+            model = FSDP(model, **fsdp_kwargs)
         else:
-            model = DistributedDataParallel(model, device_ids=[self.rank])
+            model = DistributedDataParallel(model, device_ids=[device_hpu])
 
-        target = torch.tensor([0, 1], dtype=torch.long).cuda()
+        target = torch.tensor([0, 1], dtype=torch.long).to(device_hpu)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 

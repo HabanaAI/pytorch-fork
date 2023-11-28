@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import warnings
+import time
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
 from copy import deepcopy
@@ -631,7 +632,8 @@ class ModuleWithDelay(FSDPTestModel):
     def get_loss(self, input, output):
         loss = self.module.get_loss(input, output)
         if self.delay_after_loss_ms > 0:
-            torch.cuda._sleep(int(self.delay_after_loss_ms * get_cycles_per_ms()))
+            # torch.cuda._sleep(int(self.delay_after_loss_ms * get_cycles_per_ms()))
+            time.sleep(int(self.delay_after_loss_ms * 10))
         return loss
 
     def run_backward(self, loss):
@@ -724,6 +726,7 @@ class MixtureOfExperts(NestedWrappedModule):
             wrap_fsdp=wrap_fsdp,
             cuda_init_mode=cuda_init_mode,
             deterministic=deterministic,
+            **fsdp_kwargs,
         )
         self.group = group
         self.delay_before_free_ms = delay_before_free_ms
@@ -769,9 +772,10 @@ class MixtureOfExperts(NestedWrappedModule):
                 orig_reshard = torch.distributed.fsdp._runtime_utils._reshard
 
                 def _delayed_reshard(*args, **kwargs):
-                    torch.cuda._sleep(
-                        int(self.delay_before_free_ms * get_cycles_per_ms())
-                    )
+                    # torch.cuda._sleep(
+                    #     int(self.delay_before_free_ms * get_cycles_per_ms())
+                    # )
+                    time.sleep(int(self.delay_before_free_ms * 10))
                     return orig_reshard(*args, **kwargs)
 
                 # This patch covers any `import torch..._reshard` uses.
@@ -1206,7 +1210,7 @@ class FSDPTest(MultiProcessTestCase):
             optim.zero_grad()
             with torch.cuda.amp.autocast(enabled=autocast):
                 # Inputs always cuda regardless of cpu offloading, or model.device
-                input = model.module.get_input(torch.device("cuda"))
+                input = model.module.get_input(torch.device("hpu"))
                 if use_pure_fp16 or (mixed_precision and not isinstance(model, FSDP)):
                     if isinstance(input, torch.Tensor):
                         input = input.half()
@@ -1382,7 +1386,7 @@ class FSDPTest(MultiProcessTestCase):
             self.assertRaisesRegex(
                 RuntimeError,
                 "An FSDP-managed module with parameter CPU offloading enabled "
-                "has parameters on cuda",
+                "has parameters on hpu",
             )
             if expects_device_error
             else nullcontext()

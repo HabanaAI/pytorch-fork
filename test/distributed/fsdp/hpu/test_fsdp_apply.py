@@ -16,6 +16,9 @@ from torch.testing._internal.common_fsdp import (
 )
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -66,10 +69,12 @@ class TestApply(FSDPTest):
     def test_nested_module_apply(self):
         """Tests that ``apply()`` modifies parameter values in-place on a
         non-FSDP-root nested FSDP-wrapped model."""
+        fsdp_kwargs = {"device_id":device_hpu}
         nested_wrapped_module = NestedWrappedModule.init(
             self.process_group,
             FSDPInitMode.RECURSIVE,
             CUDAInitMode.CUDA_AFTER,
+            fsdp_kwargs = fsdp_kwargs,
         )
         self._check_apply(nested_wrapped_module)
 
@@ -77,10 +82,12 @@ class TestApply(FSDPTest):
     def test_transformer_module_apply(self):
         """Tests that ``apply()`` modifies parameter values in-place on an
         FSDP-wrapped transformer model with shared parameters."""
+        fsdp_kwargs = {"device_id":device_hpu}
         transformer = TransformerWithSharedParams.init(
             self.process_group,
             FSDPInitMode.RECURSIVE,
             CUDAInitMode.CUDA_AFTER,
+            fsdp_kwargs = fsdp_kwargs,
         )
         self._check_apply(transformer)
 
@@ -88,10 +95,12 @@ class TestApply(FSDPTest):
     def test_apply_in_summon_raises_error(self):
         """Tests that calling ``apply()`` on an FSDP instance inside the
         ``summon_full_params()`` context raises an error."""
+        fsdp_kwargs = {"device_id":device_hpu}
         transformer = TransformerWithSharedParams.init(
             self.process_group,
             FSDPInitMode.RECURSIVE,
             CUDAInitMode.CUDA_AFTER,
+            fsdp_kwargs = fsdp_kwargs,
         )
         with transformer.summon_full_params(transformer):
             with self.assertRaisesRegex(ValueError, "expected to be in states"):

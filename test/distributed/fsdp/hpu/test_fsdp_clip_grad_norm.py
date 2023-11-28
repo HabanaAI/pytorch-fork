@@ -30,6 +30,9 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -61,10 +64,10 @@ class TestClipGradNorm(FSDPTest):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return self.lin2(self.lin1(x))
 
-        model = Model().cuda()
+        model = Model().to(device_hpu)
         model.lin2 = FSDP(model.lin2)
         fsdp_model = FSDP(model)
-        fsdp_model(torch.randn((2, 5), device=torch.device("cuda"))).sum().backward()
+        fsdp_model(torch.randn((2, 5), device=torch.device("hpu"))).sum().backward()
         error_regex = "should only be called on the root FSDP instance"
         with self.assertRaisesRegex(RuntimeError, error_regex):
             fsdp_model.lin2.clip_grad_norm_(max_norm=2)
@@ -108,6 +111,7 @@ class TestClipGradNorm(FSDPTest):
         fsdp_kwargs = {
             "cpu_offload": CPUOffload(offload_params=offload_params),
             "use_orig_params": use_orig_params,
+            "device_id": device_hpu
         }
         if sharding_strategy == "mixed_strategy":
             fsdp_model = TransformerWithSharedParams.init(
@@ -155,7 +159,7 @@ class TestClipGradNorm(FSDPTest):
         LR = 1e-2
         ddp_optim = torch.optim.Adam(ddp_model.parameters(), lr=LR)
         fsdp_optim = torch.optim.Adam(fsdp_model.parameters(), lr=LR)
-        device = torch.device("cuda")
+        device = torch.device("hpu")
         LARGE_FACTOR = 100
         inp = ddp_model.module.get_input(device)
         for model in (ddp_model, fsdp_model):
@@ -271,6 +275,7 @@ class TestClipGradNorm(FSDPTest):
                 reduce_dtype=torch.float16,
                 keep_low_precision_grads=True,
             ),
+            "device_id": device_hpu,
         }
         fsdp_model = FSDP(
             NestedWrappedModule.init(
@@ -282,7 +287,7 @@ class TestClipGradNorm(FSDPTest):
             ),
             **fsdp_kwargs,
         )
-        inp = fsdp_model.module.get_input(torch.device("cuda"))
+        inp = fsdp_model.module.get_input(torch.device("hpu"))
         out = fsdp_model(*inp)
         out.sum().backward()
         for param in fsdp_model.parameters():
@@ -322,10 +327,10 @@ class TestClipGradNorm(FSDPTest):
             lin_module,
             sharding_strategy=ShardingStrategy.SHARD_GRAD_OP,
             mixed_precision=mixed_precision_config,
-            device_id=self.rank,
+            device_id=device_hpu,
             use_orig_params=use_orig_params,
         )
-        inp = torch.randn(32, 24, device="cuda")
+        inp = torch.randn(32, 24, device="hpu")
         fsdp_module(inp)
         with self.assertWarnsRegex(
             expected_warning=UserWarning,
@@ -335,7 +340,7 @@ class TestClipGradNorm(FSDPTest):
         ):
             total_norm = fsdp_module.clip_grad_norm_(1)
         self.assertEqual(total_norm.dtype, torch.float32)
-        self.assertEqual(total_norm, torch.tensor(0.0, device="cuda"))
+        self.assertEqual(total_norm, torch.tensor(0.0, device="hpu"))
 
 
 instantiate_parametrized_tests(TestClipGradNorm)
