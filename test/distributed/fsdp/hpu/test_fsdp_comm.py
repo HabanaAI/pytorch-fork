@@ -25,6 +25,9 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -52,7 +55,8 @@ class TestCommunication(FSDPTest):
         sharding_strategy: ShardingStrategy,
         device: torch.device,
     ):
-        fsdp_kwargs = {"sharding_strategy": sharding_strategy}
+        fsdp_kwargs = {"sharding_strategy": sharding_strategy,
+                       "device_id": device_hpu,}
         if nested_model:
             model = NestedWrappedModule.init(
                 self.process_group,
@@ -217,7 +221,7 @@ class TestCommunication(FSDPTest):
                 FSDP algorithm.
         """
         # Initialize the model and inputs
-        device = torch.device("cuda")
+        device = torch.device("hpu")
         fsdp_model = self._init_model(nested_model, sharding_strategy, device)
         batch = fsdp_model.module.get_input(device)
 

@@ -17,6 +17,9 @@ from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -42,7 +45,7 @@ class TestFSDPFineTune(FSDPTest):
         torch.manual_seed(42)
         modules = []
         for _ in range(self.NUM_LINEARS):
-            modules += [nn.Linear(5, 5, device="cuda"), nn.ReLU()]
+            modules += [nn.Linear(5, 5, device="hpu"), nn.ReLU()]
         seq = nn.Sequential(*modules)
         self._set_seq_module_requires_grad(seq, False)
         return seq
@@ -85,11 +88,13 @@ class TestFSDPFineTune(FSDPTest):
     ):
         seq = self._init_seq_module()
         policy = ModuleWrapPolicy({nn.Linear})
+        fsdp_kwargs = {"device_id": device_hpu}
         seq = FSDP(
             seq,
             auto_wrap_policy=policy,
             sharding_strategy=sharding_strategy,
             use_orig_params=use_orig_params,
+            **fsdp_kwargs
         )
         orig_post_backward_reshard = (
             torch.distributed.fsdp._runtime_utils._post_backward_reshard
@@ -138,7 +143,7 @@ class TestFSDPFineTune(FSDPTest):
                     self._set_seq_module_requires_grad(seq, True)
 
                 inp = torch.randn(
-                    (8, 5), device="cuda", requires_grad=inp_requires_grad
+                    (8, 5), device="hpu", requires_grad=inp_requires_grad
                 )
                 if step_idx == nograd_step_idx:
                     with torch.no_grad():
@@ -176,19 +181,21 @@ class TestFSDPFineTune(FSDPTest):
     ):
         seq = self._init_seq_module()
         policy = ModuleWrapPolicy({nn.Linear})
+        fsdp_kwargs = {"device_id": device_hpu}
         fsdp_seq = FSDP(
             copy.deepcopy(seq),
             auto_wrap_policy=policy,
             sharding_strategy=sharding_strategy,
             use_orig_params=use_orig_params,
+            **fsdp_kwargs
         )
-        ddp_seq = DDP(copy.deepcopy(seq), device_ids=[self.rank])
+        ddp_seq = DDP(copy.deepcopy(seq), device_ids=[device_hpu])
         fsdp_optim = torch.optim.Adam(fsdp_seq.parameters(), lr=1e-2)
         ddp_optim = torch.optim.Adam(ddp_seq.parameters(), lr=1e-2)
         torch.manual_seed(self.rank + 1)
         losses = []
         for _ in range(6):
-            inp = torch.randn((8, 5), device="cuda")
+            inp = torch.randn((8, 5), device="hpu")
             for seq, optim in ((fsdp_seq, fsdp_optim), (ddp_seq, ddp_optim)):
                 loss = seq(inp).sum()
                 losses.append(loss)

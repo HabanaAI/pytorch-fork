@@ -402,11 +402,11 @@ class TestCommunicationHooks(FSDPTest):
             state, hook, sharding_strategy, torch.float16, has_wrapping
         )
 
-    @requires_nccl_version((2, 10), "Need NCCL 2.10+ for BF16_COMPRESS")
-    @skip_but_pass_in_sandcastle_if(
-        not BFLOAT16_AVAILABLE,
-        "BFloat16 is only supported by CUDA 11+",
-    )
+    # @requires_nccl_version((2, 10), "Need NCCL 2.10+ for BF16_COMPRESS")
+    # @skip_but_pass_in_sandcastle_if(
+    #     not BFLOAT16_AVAILABLE,
+    #     "BFloat16 is only supported by CUDA 11+",
+    # )
     @skip_if_lt_x_gpu(2)
     @parametrize("has_wrapping", [True, False])
     @parametrize(
