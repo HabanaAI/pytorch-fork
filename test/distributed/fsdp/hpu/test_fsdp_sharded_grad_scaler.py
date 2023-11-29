@@ -30,6 +30,8 @@ from torch.testing._internal.common_utils import (
     TestCase,
 )
 
+import habana_frameworks.torch as ht
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -67,7 +69,7 @@ subtest_name = functools.partial(subtest_name, test_name_mapping)
 
 class TestShardGradScaler(TestCase):
     @unittest.skipIf(
-        amp_definitely_not_available(), "no supported device (cuda, xla) found"
+        (amp_definitely_not_available() and (not ht.hpu.is_available())), "no supported device (cuda, xla, hpu) found"
     )
     def test_grad_scaling(self):
         pg = DummyProcessGroup(0, 1)
@@ -83,7 +85,7 @@ class TestShardGradScaler(TestCase):
         self.assertTrue(scaler._scale.device == t1.device)
 
     @unittest.skipIf(
-        amp_definitely_not_available(), "no supported device (cuda, xla) found"
+        (amp_definitely_not_available() and (not ht.hpu.is_available())), "no supported device (cuda, xla, hpu) found"
     )
     def test_scaling_unscaling_sparse(self):
         pg = DummyProcessGroup(0, 1)
@@ -128,7 +130,7 @@ class TestShardGradScaler(TestCase):
         self.assertEqual(found_inf, 1.0)
 
     @unittest.skipIf(
-        amp_definitely_not_available(), "no supported device (cuda, xla) found"
+        (amp_definitely_not_available() and (not ht.hpu.is_available())), "no supported device (cuda, xla, hpu) found"
     )
     def test_inf_gradients_skip_optim_step(self):
         pg = DummyProcessGroup(0, 1)

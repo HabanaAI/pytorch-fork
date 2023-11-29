@@ -20,6 +20,8 @@ from torch.testing._internal.distributed._tensor.common_dtensor import (
     with_comms,
 )
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 class TestShardUtilsDistributed(FSDPTest):
     @property
@@ -29,7 +31,7 @@ class TestShardUtilsDistributed(FSDPTest):
     def _create_tensor(self, *size):
         # Keep everything deterministic.
         torch.manual_seed(0)
-        return torch.rand(*size).cuda()
+        return torch.rand(*size).to(device_hpu)
 
     @skip_if_lt_x_gpu(2)
     def test_create_chunk_sharded_tensor(self):
@@ -40,10 +42,10 @@ class TestShardUtilsDistributed(FSDPTest):
                 tensor,
                 self.rank,
                 self.world_size,
-                torch.cuda.device_count(),
+                ht.hpu.device_count(),
                 _get_default_group(),
             )
-            output = torch.empty(*size).cuda() if self.rank == 0 else None
+            output = torch.empty(*size).to(device_hpu) if self.rank == 0 else None
             sharded_tensor.gather(0, output)
             if self.rank == 0:
                 self.assertEqual(tensor, output)

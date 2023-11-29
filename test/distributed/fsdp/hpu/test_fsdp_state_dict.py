@@ -1054,6 +1054,7 @@ class TestFSDPStateDict(FSDPTest):
             )
             if mixed_precision
             else None,
+            device_id=device_hpu,
         )
         prefix_str = "foo." if prefix else ""
         with FSDP.state_dict_type(fsdp_model, STATE_DICT_MAPPING[state_dict_type]):
