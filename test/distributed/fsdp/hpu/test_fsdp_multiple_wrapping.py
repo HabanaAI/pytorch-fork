@@ -11,6 +11,9 @@ from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -26,7 +29,7 @@ if TEST_WITH_DEV_DBG_ASAN:
 class InnerModel(Module):
     def __init__(self):
         super().__init__()
-        self.layers = Sequential(FSDP(Linear(5, 5)))
+        self.layers = Sequential(FSDP(Linear(5, 5), device_id=device_hpu))
 
     def forward(self, x):
         return self.layers(x)
@@ -41,21 +44,21 @@ class TestMultipleWrapping(FSDPTest):
         contains nested FSDP wrappers within the module.
         """
         inner_model = InnerModel()
-        model = FSDP(inner_model).cuda()
+        model = FSDP(inner_model, device_id=device_hpu)
         optim = SGD(model.parameters(), lr=0.1)
 
         for i in range(3):
-            input = torch.rand((1, 5), dtype=torch.float).cuda()
+            input = torch.rand((1, 5), dtype=torch.float).to(device_hpu)
             input.requires_grad = True
             output = model(input)
             output.sum().backward()
             optim.step()
             optim.zero_grad()
-        input = torch.rand((1, 5), dtype=torch.float).cuda()
+        input = torch.rand((1, 5), dtype=torch.float).to(device_hpu)
         output = model(input)
 
         # second time to rewrap the inner model
-        rewrapped_model = FSDP(inner_model).cuda()
+        rewrapped_model = FSDP(inner_model, device_id=device_hpu)
         rewrapped_output = rewrapped_model(input)
 
         self.assertEqual(output, rewrapped_output)

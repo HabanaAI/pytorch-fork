@@ -11,6 +11,9 @@ from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -27,11 +30,11 @@ class TestUnevenParamShard(FSDPTest):
     def _get_ref_results(self, model, input, my_lr):
         with torch.no_grad():
             # Compute one iteration local output.
-            weight = model.weight.T.clone().to(self.rank)
-            v = torch.Tensor(input[self.rank]).to(self.rank)
+            weight = model.weight.T.clone().to(device_hpu)
+            v = torch.Tensor(input[self.rank]).to(device_hpu)
             ref_forward_output_my_rank = torch.matmul(v, weight)
             # Compute one iteration global weight update.
-            v = torch.Tensor(input[: self.world_size]).to(self.rank)
+            v = torch.Tensor(input[: self.world_size]).to(device_hpu)
             grad = v.float().sum(0).repeat(weight.shape[0], 1).div(self.world_size)
             ref_weight_out = weight - grad.T * my_lr
 
@@ -48,11 +51,11 @@ class TestUnevenParamShard(FSDPTest):
             model, input, my_lr
         )
 
-        model.to(self.rank)
-        model = FSDP(model)
+        model.to(device_hpu)
+        model = FSDP(model, device_id=device_hpu)
         optim = SGD(model.parameters(), lr=my_lr)
         self.assertTrue(len(input) >= self.world_size)
-        in_data = torch.Tensor(input[self.rank]).to(self.rank)
+        in_data = torch.Tensor(input[self.rank]).to(device_hpu)
         out = model(in_data)
         out.float().sum().backward()
         optim.step()

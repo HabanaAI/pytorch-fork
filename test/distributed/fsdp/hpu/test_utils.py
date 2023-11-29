@@ -20,6 +20,8 @@ from torch.testing._internal.common_utils import (
     TestCase,
 )
 
+import habana_frameworks.torch as ht
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -34,11 +36,11 @@ if TEST_WITH_DEV_DBG_ASAN:
 
 class TestUtils(TestCase):
     @parametrize(
-        "devices", [["cpu"], ["cuda"], subtest(["cpu", "cuda"], name="cpu_cuda")]
+        "devices", [["cpu"], ["hpu"], subtest(["cpu", "hpu"], name="cpu_hpu")]
     )
     def test_apply_to_tensors(self, devices):
-        if "cuda" in devices and (
-            not torch.cuda.is_available() or torch.cuda.device_count() < 1
+        if "hpu" in devices and (
+            not ht.hpu.is_available() or ht.hpu.device_count() < 1
         ):
             raise unittest.SkipTest("Skipped due to lack of GPU")
 

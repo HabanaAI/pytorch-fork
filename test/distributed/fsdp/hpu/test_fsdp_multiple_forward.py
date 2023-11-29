@@ -12,6 +12,9 @@ from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import FSDPTest, get_full_params
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -31,7 +34,7 @@ class Model(Module):
         torch.manual_seed(0)
         self.inner = Linear(4, 4)
         if wrap_fsdp:
-            self.inner = FSDP(self.inner)
+            self.inner = FSDP(self.inner, device_id=device_hpu)
         self.outer = Linear(4, 5)
 
     def forward(self, x):
@@ -46,14 +49,14 @@ class TestMultiForward(FSDPTest):
         # keep everything deterministic for input data
         torch.manual_seed(0)
 
-        model = Model(wrap_fsdp).cuda()
+        model = Model(wrap_fsdp).to(device_hpu)
         if wrap_fsdp:
-            model = FSDP(model)
+            model = FSDP(model, device_id=device_hpu)
         else:
-            model = DistributedDataParallel(model, device_ids=[self.rank])
+            model = DistributedDataParallel(model, device_ids=[device_hpu])
         optim = SGD(model.parameters(), lr=0.1)
 
-        in_data = torch.rand(64, 4).cuda()
+        in_data = torch.rand(64, 4).to(device_hpu)
         in_data.requires_grad = True
         for _ in range(3):
             out = model(in_data)
