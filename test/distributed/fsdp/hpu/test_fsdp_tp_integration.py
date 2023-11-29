@@ -317,7 +317,7 @@ class TestTPFSDPIntegration(FSDPTest):
         )
         tensor_parallel_size = 2
         torch.manual_seed(0)
-        model = SimpleModel().cuda(self.rank)
+        model = SimpleModel().to(device_hpu)
         mesh_2d, fsdp_pg, _ = self._get_sub_pgs(tensor_parallel_size)
         # Shard with TP and then wrap with FSDP
         tp_fsdp_model = parallelize_module(
@@ -338,7 +338,7 @@ class TestTPFSDPIntegration(FSDPTest):
         input_seed = self.rank
         torch.manual_seed(input_seed + 1)
         inp_size = [2, 3, 5]
-        inp = torch.rand(*inp_size).cuda(self.rank)
+        inp = torch.rand(*inp_size).to(device_hpu)
 
         tp_fsdp_model(inp).sum().backward()
         tp_fsdp_optim.step()

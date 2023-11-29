@@ -28,6 +28,9 @@ from torch.testing._internal.common_fsdp import (
 )
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -47,7 +50,7 @@ class TestUnshardParamsBase(FSDPTest):
 
     @property
     def device(self) -> torch.device:
-        return torch.device("cuda", self.rank)
+        return device_hpu
 
     def _test_unshard_params_writeback(
         self,
@@ -123,7 +126,7 @@ class TestUnshardParamsBase(FSDPTest):
             self.process_group,
             FSDPInitMode.NO_FSDP,
             CUDAInitMode.CUDA_BEFORE,
-            fsdp_kwargs={},
+            fsdp_kwargs={"device_id": device_hpu},
             deterministic=True,
         )
         # Apply FSDP such that the root module does not have FSDP applied,
@@ -136,6 +139,7 @@ class TestUnshardParamsBase(FSDPTest):
                 "cpu_offload": cpu_offload,
                 "mixed_precision": mixed_precision,
                 "use_orig_params": use_orig_params,
+                "device_id": device_hpu,
             },
             deterministic=True,
         )
@@ -285,6 +289,7 @@ class TestUnshardParams(TestUnshardParamsBase):
         fsdp_kwargs = {
             "mixed_precision": mixed_precision,
             "use_orig_params": use_orig_params,
+            "device_id": device_hpu,
         }
         model = FSDP(
             nn.Sequential(
@@ -372,6 +377,7 @@ class TestUnshardParams(TestUnshardParamsBase):
         fsdp_kwargs = {
             "mixed_precision": mixed_precision,
             "use_orig_params": use_orig_params,
+            "device_id": device_hpu,
         }
         model = FSDP(
             nn.Sequential(
@@ -563,6 +569,7 @@ class TestUnshardParams(TestUnshardParamsBase):
             fsdp_kwargs={
                 "use_orig_params": use_orig_params,
                 "sharding_strategy": sharding_strategy,
+                "device_id": device_hpu,
             },
         )
         with FSDP.summon_full_params(fsdp_model):
@@ -570,7 +577,7 @@ class TestUnshardParams(TestUnshardParamsBase):
                 assert torch.all(torch.isclose(p1, p2))
 
         # Check calling after backward
-        inp = fsdp_model.get_input(torch.device("cuda"))
+        inp = fsdp_model.get_input(torch.device("hpu"))
         ddp_out = ddp_model(*inp)
         fsdp_out = fsdp_model(*inp)
         ddp_out.sum().backward()
@@ -580,7 +587,7 @@ class TestUnshardParams(TestUnshardParamsBase):
             _check_grads(ddp_model, fsdp_model, old_fsdp_grads)
 
         # Check calling between forward and backward
-        inp = fsdp_model.get_input(torch.device("cuda"))
+        inp = fsdp_model.get_input(torch.device("hpu"))
         ddp_out = ddp_model(*inp)
         fsdp_out = fsdp_model(*inp)
         old_fsdp_grads = _get_fsdp_grads(fsdp_model, is_supported)
@@ -613,6 +620,7 @@ class TestUnshardParams(TestUnshardParamsBase):
             fsdp_kwargs={
                 "use_orig_params": True,
                 "sharding_strategy": sharding_strategy,
+                "device_id": device_hpu,
             },
         )
         for fsdp_module in FSDP.fsdp_modules(fsdp_model):
@@ -668,7 +676,7 @@ class TestUnshardParamsErrors(TestUnshardParamsBase):
                 with fsdp_module.summon_full_params(fsdp_module):
                     pass
 
-        model = FSDP(MyModule()).cuda(self.rank)
+        model = FSDP(MyModule(), device_id=device_hpu)
         with self.assertRaisesRegex(
             AssertionError, "Cannot manually unshard parameters during forward/backward"
         ):

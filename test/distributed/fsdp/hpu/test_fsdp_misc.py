@@ -142,7 +142,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 fsdp_kwargs={"device_id": torch.device("hpu")},
             )
         _check_device_matches(
-            nested_wrapped_module, device) 
+            nested_wrapped_module, device_hpu) 
 
     @skip_if_lt_x_gpu(2)
     @parametrize("use_second_layer", [True, False])
@@ -421,12 +421,13 @@ class TestFSDPMiscMultiProcess(FSDPTest):
         context = self.assertWarnsRegex(
             expected_warning=UserWarning, expected_regex=regex
         )
-        device_hpu = torch.device("hpu")
+        fsdp_kwargs = {"device_id": device_hpu}
         with context:
             nested_wrapped_module = NestedWrappedModule.init(
                 self.process_group,
                 FSDPInitMode.RECURSIVE,
                 CUDAInitMode.CUDA_NEVER,
+                fsdp_kwargs=fsdp_kwargs,
             )
             fsdp_model = FSDP(nested_wrapped_module, self.process_group, device_id = device_hpu)
         devices = {p.device for p in fsdp_model.parameters()}
@@ -690,13 +691,13 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
         device_hpu = torch.device("hpu", ht.hpu.current_device())
         # Test CPU
         no_params = nn.ReLU()
-        module = FSDP(no_params)
+        module = FSDP(no_params, device_id = device_hpu)
         # Test CUDA
-        no_params = nn.ReLU().to(device_hpu)
+        no_params = nn.ReLU().to(torch.device("hpu"))
         module = FSDP(no_params, device_id = device_hpu)
         # Test CPU + device_id
         no_params = nn.ReLU()
-        module = FSDP(no_params, device_id=ht.hpu.current_device())
+        module = FSDP(no_params, device_id=device_hpu)
         # For modules with no params, wrong device_id will raise error about
         # inconsistency between compute_device and device_id, since compute_device
         # is computed as torch.cuda.current_device when there are no params.
@@ -704,14 +705,14 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
         context = (
             (
                 self.assertRaisesRegex(
-                    ValueError, f"Inconsistent.*cuda:{self.rank} vs cuda:0"
+                    ValueError, f"Inconsistent.*hpu:{self.rank} vs hpu:0"
                 )
             )
             if self.rank != 0
             else nullcontext()
         )
         with context:
-            FSDP(no_params, device_id=0)
+            FSDP(no_params, device_id=device_hpu)
 
     @skip_if_lt_x_gpu(2)
     def test_fsdp_same_model_across_ranks(self):

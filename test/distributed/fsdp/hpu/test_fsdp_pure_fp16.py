@@ -23,6 +23,9 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_DEV_DBG_ASAN,
 )
 
+import habana_frameworks.torch as ht
+device_hpu=torch.device("hpu", ht.hpu.current_device())
+
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -101,11 +104,11 @@ class TestPureFP16(FSDPTest):
             self.process_group,
             FSDPInitMode.NO_FSDP,
             CUDAInitMode.CUDA_NEVER,
-            {},
+            {"device_id": device_hpu,},
         )
         fsdp_kwargs = {
             "use_orig_params": use_orig_params,
-            "device_id": torch.cuda.current_device(),
+            "device_id": device_hpu,
             "mixed_precision": mixed_precision,
         }
         if to_half_before_fsdp_init:
@@ -117,7 +120,7 @@ class TestPureFP16(FSDPTest):
             self.assertEqual(param.dtype, torch.float16)
         inp = tuple(
             t.half() if torch.is_tensor(t) else t
-            for t in fsdp_model.module.get_input(torch.device("cuda"))
+            for t in fsdp_model.module.get_input(torch.device("hpu"))
         )
         out = fsdp_model(*inp)
         out.sum().backward()
