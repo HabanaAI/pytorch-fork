@@ -107,7 +107,7 @@ class TestClipGradNorm(FSDPTest):
             CUDAInitMode.CUDA_BEFORE,
             deterministic=True,
         )
-        ddp_model = DDP(local_model, device_ids=[self.rank])
+        ddp_model = DDP(local_model, device_ids=[device_hpu])
         fsdp_kwargs = {
             "cpu_offload": CPUOffload(offload_params=offload_params),
             "use_orig_params": use_orig_params,

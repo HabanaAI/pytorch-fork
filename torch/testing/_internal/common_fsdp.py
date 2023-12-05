@@ -632,8 +632,10 @@ class ModuleWithDelay(FSDPTestModel):
     def get_loss(self, input, output):
         loss = self.module.get_loss(input, output)
         if self.delay_after_loss_ms > 0:
-            # torch.cuda._sleep(int(self.delay_after_loss_ms * get_cycles_per_ms()))
-            time.sleep(int(self.delay_after_loss_ms * 10))
+            if ht.hpu.is_available():
+                time.sleep(self.delay_after_loss_ms / 1000)
+            else:
+                torch.cuda._sleep(int(self.delay_after_loss_ms * get_cycles_per_ms()))
         return loss
 
     def run_backward(self, loss):
@@ -641,9 +643,12 @@ class ModuleWithDelay(FSDPTestModel):
 
         def _delayed_reduce_scatter(*args, **kwargs):
             if self.delay_before_reduction_ms > 0:
-                torch.cuda._sleep(
-                    int(self.delay_before_reduction_ms * get_cycles_per_ms())
-                )
+                if ht.hpu.is_available():
+                    time.sleep(self.delay_before_reduction_ms / 1000)
+                else:
+                    torch.cuda._sleep(
+                        int(self.delay_before_reduction_ms * get_cycles_per_ms())
+                    )
             return orig_reduce_scatter(*args, **kwargs)
 
         with mock.patch(
@@ -772,10 +777,12 @@ class MixtureOfExperts(NestedWrappedModule):
                 orig_reshard = torch.distributed.fsdp._runtime_utils._reshard
 
                 def _delayed_reshard(*args, **kwargs):
-                    # torch.cuda._sleep(
-                    #     int(self.delay_before_free_ms * get_cycles_per_ms())
-                    # )
-                    time.sleep(int(self.delay_before_free_ms * 10))
+                    if ht.hpu.is_available():
+                        time.sleep(self.delay_before_free_ms / 1000)
+                    else:
+                        torch.cuda._sleep(
+                            int(self.delay_before_free_ms * get_cycles_per_ms())
+                        )
                     return orig_reshard(*args, **kwargs)
 
                 # This patch covers any `import torch..._reshard` uses.
@@ -1143,7 +1150,11 @@ class FSDPTest(MultiProcessTestCase):
 
         # Specify gloo backend to make 'init_process_group()' succeed,
         # Actual tests will be skipped if there is no enough GPUs.
-        backend = "hccl" if ht.hpu.is_available() else "gloo"
+        backend = "gloo"
+        if ht.hpu.is_available():
+            backend = "hccl"
+            import habana_frameworks.torch.distributed.hccl as hccl
+            hccl.initialize_distributed_hpu(self.world_size, self.rank, self.rank)
 
         try:
             dist.init_process_group(
@@ -1208,7 +1219,8 @@ class FSDPTest(MultiProcessTestCase):
         optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
         for _ in range(num_steps):
             optim.zero_grad()
-            with torch.cuda.amp.autocast(enabled=autocast):
+            with (torch.autocast('hpu', enabled=autocast) if ht.hpu.is_available() else
+                  torch.cuda.amp.autocast(enabled=autocast)):
                 # Inputs always cuda regardless of cpu offloading, or model.device
                 input = model.module.get_input(torch.device("hpu"))
                 if use_pure_fp16 or (mixed_precision and not isinstance(model, FSDP)):
@@ -1244,6 +1256,8 @@ class FSDPTest(MultiProcessTestCase):
                 # FSDP loss is fp16, DDP AMP loss is fp32
                 elif isinstance(model, FSDP):
                     assert mixed_precision is not None  # mypy
+                    self.assertEqual(loss.dtype, mixed_precision.param_dtype)
+                elif isinstance(model, DDP) and mixed_precision is not None:
                     self.assertEqual(loss.dtype, mixed_precision.param_dtype)
                 else:
                     self.assertEqual(loss.dtype, torch.float32)
@@ -1319,7 +1333,9 @@ class FSDPTest(MultiProcessTestCase):
             **init_kwargs,
         )
         if ref_init_fn is None:
-            ref_model = DDP(model, device_ids=[rank], output_device=rank)
+            device_hpu = torch.device("hpu", ht.hpu.current_device())
+            ref_model = DDP(model, device_ids=[device_hpu], output_device=device_hpu)
+            fsdp_kwargs.update({"device_id": device_hpu})
         else:
             ref_model = ref_init_fn(model)
         if use_pure_fp16:
