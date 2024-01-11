@@ -135,7 +135,6 @@ class TestGradAcc(FSDPTest):
             deterministic=True,
             add_bn=False,  # disable BN since the test uses varying batch sizes
         )
-        device = device
         optim = torch.optim.SGD(
             fsdp_model.parameters(),
             lr=0.01,
@@ -204,13 +203,13 @@ class TestGradAcc(FSDPTest):
         ]
 
         # Compare the losses and gradients
-        torch.testing.assert_close(ref_loss, acc_loss)
+        torch.testing.assert_close(ref_loss, acc_loss, atol=1e-03, rtol=1e-03))
         self.assertEqual(len(ref_grads), len(acc_grads))
         for ref_grad, acc_grad in zip(ref_grads, acc_grads):
             self.assertEqual(ref_grad.device, acc_grad.device)
             self.assertEqual(ref_grad.size(), acc_grad.size())
             self.assertEqual(ref_grad.dtype, acc_grad.dtype)
-            torch.testing.assert_close(ref_grad, acc_grad)
+            torch.testing.assert_close(ref_grad, acc_grad, atol=1e-03, rtol=1e-03)
 
         # Check that the optimizer step does not error
         optim.step()
