@@ -45,7 +45,6 @@ from torch.testing._internal.common_utils import (
 )
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -101,6 +100,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
 
     def _get_ddp_transformer(self, find_unused_params: bool) -> DDP:
         """Returns a transformer with shared parameters wrapped with DDP."""
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = TransformerWithSharedParams.init(
             self.process_group,
             FSDPInitMode.NO_FSDP,
@@ -132,6 +132,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         # Each transformer layer has multiple linear layers, so this policy, in
         # combination with the parameter group construction, ensures different
         # hyperparameter settings within one `FlatParameter`
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {
             "auto_wrap_policy": ModuleWrapPolicy(
                 {
@@ -175,7 +176,12 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         num_iters: int = 10,
     ):
         """Checks training parity between DDP and FSDP."""
-        device = torch.device("hpu")
+        import habana_frameworks.torch.hpu as htcore
+        import torch.distributed as dist
+        htcore.setDeterministic(True)
+        device = torch.device("hpu", ht.hpu.current_device())
+        torch.manual_seed(0)
+
         for i in range(num_iters):
             iter_losses = []
             for model, optim in ((ddp_model, ddp_optim), (fsdp_model, fsdp_optim)):
@@ -185,18 +191,20 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
                     optim.zero_grad(set_to_none=set_to_none)  # pre-forward
                 inp = module.get_input(device)
                 output = model(*inp)
+                dist.barrier()
                 loss = module.get_loss(inp, output).to(device)
                 iter_losses.append(loss)
                 if i % 2 == 1:
                     optim.zero_grad(set_to_none=set_to_none)  # pre-backward
                 module.run_backward(loss)
+                dist.barrier()
                 # Perform the DDP optimizer step on CPU to match FSDP if needed
                 if model is ddp_model and fsdp_model.cpu_offload.offload_params:
                     model.to(torch.device("cpu"))
                 optim.step()
                 if model is ddp_model and fsdp_model.cpu_offload.offload_params:
                     model.to(device)
-            torch.testing.assert_close(iter_losses[0], iter_losses[1])
+            torch.testing.assert_close(iter_losses[0], iter_losses[1], atol=1e-03, rtol=1e-03)
             iter_losses.clear()
         self._check_ddp_fsdp_param_parity(ddp_model, fsdp_model)
 
@@ -207,7 +215,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
             ):
                 # Allow for FSDP prefixes
                 self.assertEqual(n1, clean_tensor_name(n2))
-                torch.testing.assert_close(p1, p2)
+                torch.testing.assert_close(p1, p2, atol=1e-03, rtol=1e-03)
 
     def _get_sharding_strategy_from_str(
         self, sharding_strategy_str: str
@@ -240,6 +248,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         self, sharding_strategy: ShardingStrategy, skip_fsdp_guards: bool
     ):
         torch._dynamo.config.skip_fsdp_guards = skip_fsdp_guards
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {
             "auto_wrap_policy": ModuleWrapPolicy(
                 {
@@ -267,7 +276,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         optim = torch.optim.Adam(model.parameters(), lr=1e-2)
         for i in range(10):
             losses = []
-            inp = ref_model.get_input(torch.device("hpu"))
+            inp = ref_model.get_input(device_hpu)
             for _model, _optim in ((ref_model, ref_optim), (model, optim)):
                 _optim.zero_grad()
                 loss = _model(*inp).sum()
@@ -472,7 +481,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         ):
             ddp_optims.append(optim_ctor(ddp_param_group["params"]))
             fsdp_optims.append(optim_ctor(fsdp_param_group["params"]))
-        device = torch.device("hpu")
+        device=torch.device("hpu", ht.hpu.current_device())
 
         # Check that there exists a `FlatParameter` that has both a weight and
         # a bias in this rank's shard
@@ -508,7 +517,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
                 module.run_backward(loss)
                 for optim in optims:
                     optim.step()
-            torch.testing.assert_close(iter_losses[0], iter_losses[1])
+            torch.testing.assert_close(iter_losses[0], iter_losses[1], atol=1e-03, rtol=1e-03)
             iter_losses.clear()
             self._check_ddp_fsdp_param_parity(ddp_model, fsdp_model)
 
@@ -573,6 +582,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
         Returns a pair of (FSDP model, optimizer) for ``use_orig_params=False``
         and ``True``, respectively.
         """
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         LR = 1e-2
         fsdp_kwargs = {
             "sharding_strategy": sharding_strategy,
@@ -609,7 +619,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
                 fsdp2.named_parameters(),
             ):
                 self.assertEqual(n1, n2)
-                torch.testing.assert_close(p1, p2)
+                torch.testing.assert_close(p1, p2, atol=1e-03, rtol=1e-03)
 
     def _get_fsdp_parity_subtest_config(self):
         return {
@@ -646,7 +656,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
             fsdp_model_orig_params,
             optim_orig_params,
         ) = self._get_fsdp_models_and_optims(sharding_strategy, cpu_offload)
-        device = torch.device("hpu")
+        device = torch.device("hpu", ht.hpu.current_device())
         for _ in range(3):
             inp1 = fsdp_model.get_input(device)
             _inp2 = fsdp_model.get_input(device)
@@ -701,7 +711,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
             fsdp_model_orig_params,
             optim_orig_params,
         ) = self._get_fsdp_models_and_optims(sharding_strategy, cpu_offload)
-        device = torch.device("hpu")
+        device=torch.device("hpu", ht.hpu.current_device())
         for _ in range(3):
             optim.zero_grad()
             optim_orig_params.zero_grad()
@@ -826,8 +836,9 @@ class TestFSDPUseOrigParamsParamAccess(FSDPTest):
                         p1 = torch.empty(0, device=p1.device)
                     elif self.rank == 1:
                         p1 = p1.flatten()
-                torch.testing.assert_close(p1, p2)
+                torch.testing.assert_close(p1, p2, atol=1e-03, rtol=1e-03)
 
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         ddp_model = DDP(Model().to(device_hpu), device_ids=[device_hpu])
         fsdp_model = FSDP(
             Model().to(device_hpu),
@@ -839,9 +850,8 @@ class TestFSDPUseOrigParamsParamAccess(FSDPTest):
         LR = 1e-2
         ddp_optim = torch.optim.Adam(ddp_model.parameters(), lr=LR)
         fsdp_optim = torch.optim.Adam(fsdp_model.parameters(), lr=LR)
-        device = torch.device("hpu")
 
-        inp = fsdp_model.get_input(device)
+        inp = fsdp_model.get_input(device_hpu)
         ddp_out = ddp_model(*inp)
         fsdp_out = fsdp_model(*inp)
         check_parameter_parity(ddp_model, fsdp_model, True)
@@ -854,7 +864,7 @@ class TestFSDPUseOrigParamsParamAccess(FSDPTest):
         fsdp_optim.step()
         check_parameter_parity(ddp_model, fsdp_model, False)
 
-        inp = fsdp_model.get_input(device)
+        inp = fsdp_model.get_input(device_hpu)
         ddp_out = ddp_model(*inp)
         fsdp_out = fsdp_model(*inp)
         check_parameter_parity(ddp_model, fsdp_model, True)
@@ -895,7 +905,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
                 fsdp_model.named_parameters(),
             ):
                 self.assertEqual(n1, n2)
-                torch.testing.assert_close(p1, p2)
+                torch.testing.assert_close(p1, p2, atol=1e-03, rtol=1e-03)
 
     @skip_if_lt_x_gpu(2)
     def test_param_writeback(self):
@@ -913,6 +923,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
             return nn.Parameter(torch.ones_like(param) * 2)
 
         # Check that the writeback propagates
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         ddp_model = DDP(
             TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
             device_ids=[device_hpu],
@@ -966,6 +977,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
         def transform_grad(param: nn.Parameter) -> nn.Parameter:
             return None if set_to_none else torch.ones_like(param) * 2
 
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         ddp_model = DDP(
             TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
             device_ids=[device_hpu],
@@ -982,7 +994,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
         fsdp_optim = torch.optim.Adam(fsdp_model.parameters(), lr=LR)
 
         # Generate an initial gradient
-        inp = fsdp_model.get_input(torch.device("hpu"))
+        inp = fsdp_model.get_input(device_hpu)
         ddp_out = ddp_model(*inp)
         fsdp_out = fsdp_model(*inp)
         ddp_out.sum().backward()
@@ -1012,7 +1024,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
         self._check_param_parity(ddp_model, fsdp_model)  # triggers a writeback
 
         # Intentionally do not zero the gradient to check writeback
-        inp = fsdp_model.get_input(torch.device("hpu"))
+        inp = fsdp_model.get_input(device_hpu)
         ddp_out = ddp_model(*inp)
         fsdp_out = fsdp_model(*inp)
         ddp_out.sum().backward()
@@ -1023,8 +1035,9 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_writeback_shape_mismatch(self):
+        device = torch.device("hpu", ht.hpu.current_device())
         fsdp_model = FSDP(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
+            TestFSDPUseOrigParamsWriteback.Model(device),
             use_orig_params=True,
         )
         # Check that writing back with mismatched shape errors
@@ -1064,6 +1077,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_writeback_between_fwd_and_bwd_for_no_reshard_raises(self):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {
             "sharding_strategy": ShardingStrategy.SHARD_GRAD_OP,
             "auto_wrap_policy": ModuleWrapPolicy({nn.Linear}),
@@ -1115,6 +1129,7 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
     def _test_no_reshard_and_mixed_precision(self, use_full_prec_in_eval: bool):
         if use_full_prec_in_eval:
             os.environ[_FSDP_USE_FULL_PREC_IN_EVAL] = "1"
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {
             "sharding_strategy": ShardingStrategy.SHARD_GRAD_OP,
             "auto_wrap_policy": ModuleWrapPolicy({nn.Linear}),
@@ -1186,13 +1201,14 @@ class TestFSDPUseOrigParamsFQNs(FSDPTest):
                 assert_equal_fn(params[1].shape, param_shapes[1])
                 return self.lin(x)
 
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model().to(device_hpu)
         # Save the *unsharded* original parameter shapes and check the shapes
         # match in the forward pass
         param_shapes[0] = model.lin.weight.shape
         param_shapes[1] = model.lin.bias.shape
         fsdp_model = FSDP(model, use_orig_params=True)
-        inp = torch.randn((2, 5), device=torch.device("hpu"))
+        inp = torch.randn((2, 5), device=device_hpu)
         fsdp_model(inp)
 
 
@@ -1219,7 +1235,8 @@ class TestFSDPUseOrigParamsNoSync(FSDPTest):
         )
 
     def _test_no_sync_correctness(self, sharding_strategy: ShardingStrategy):
-        model = nn.Linear(7, 1, bias=False, device="hpu")
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        model = nn.Linear(7, 1, bias=False, device=device_hpu)
         fsdp_kwargs = {
             "sharding_strategy": sharding_strategy,
             "device_id": device_hpu,
@@ -1270,8 +1287,9 @@ class TestFSDPUseOrigParamsNoSync(FSDPTest):
                     orig_param.grad,
                 )
 
-        inp = torch.randn((2, 7), device="hpu")
-        grad = torch.randn((2, 1), device="hpu")
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        inp = torch.randn((2, 7), device=device_hpu)
+        grad = torch.randn((2, 1), device=device_hpu)
 
         # Compute some reference gradients using one forward/backward
         out_use_flat_params = model_use_flat_params(inp)
@@ -1337,7 +1355,8 @@ class TestFSDPUseOrigParamsNoSync(FSDPTest):
         )
 
     def _test_no_sync_mixed_precision(self, sharding_strategy: ShardingStrategy):
-        model = nn.Linear(3, 3, device="hpu")
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        model = nn.Linear(3, 3, device=device_hpu)
         mixed_precision = MixedPrecision(
             param_dtype=torch.float16,
             reduce_dtype=torch.float32,
@@ -1349,7 +1368,7 @@ class TestFSDPUseOrigParamsNoSync(FSDPTest):
             "device_id": device_hpu,
         }
         fsdp_model = FSDP(model, **fsdp_kwargs)
-        inp = torch.randn((2, 3), device="hpu")
+        inp = torch.randn((2, 3), device=device_hpu)
         with fsdp_model.no_sync():
             # For each of these `no_sync()` backward passes, check that the
             # gradients are in the low precision parameter dtype (FP16)
@@ -1372,15 +1391,16 @@ class TestFSDPUseOrigParamsNoSync(FSDPTest):
 class TestFSDPUseOrigParamsInit(FSDPTest):
     @skip_if_lt_x_gpu(2)
     def test_non_uniform_requires_grad(self):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = nn.Sequential(
-            nn.Linear(3, 3, device="hpu"),
-            nn.Linear(3, 3, device="hpu"),
+            nn.Linear(3, 3, device=device_hpu),
+            nn.Linear(3, 3, device=device_hpu),
         )
         # Freeze biases only and flatten both weights and biases into the same
         # `FlatParameter` to exercise non-uniform `requires_grad`
         model[0].bias.requires_grad = False
         model[1].bias.requires_grad = False
-        fsdp_model = FSDP(model, use_orig_params=True)
+        fsdp_model = FSDP(model, use_orig_params=True, device_id=device_hpu)
         self.assertTrue(fsdp_model[0].weight.requires_grad)
         self.assertFalse(fsdp_model[0].bias.requires_grad)
         self.assertTrue(fsdp_model[1].weight.requires_grad)

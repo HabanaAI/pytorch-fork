@@ -19,7 +19,6 @@ from torch.testing._internal.common_utils import (
 )
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -47,6 +46,7 @@ class Model(nn.Module):
             self.fsdp_wrap()
 
     def fsdp_wrap(self):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {"device_id": device_hpu}
         self.trunk = FSDP(self.trunk, **fsdp_kwargs)
         self.head = FSDP(self.head, **fsdp_kwargs)
@@ -71,6 +71,7 @@ class NestedTrunkModel(nn.Module):
             self.fsdp_wrap()
 
     def fsdp_wrap(self):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {"device_id": device_hpu}
         for name, child in self.trunk.named_children():
             wrapped_child = FSDP(child, **fsdp_kwargs)
@@ -107,7 +108,10 @@ class TestFreezingWeights(FSDPTest):
     def _dist_train(
         self, with_nested_trunk, freezing_method, freeze_after_wrap_fsdp, with_fsdp
     ):
+        import habana_frameworks.torch.hpu as htcore
+        htcore.setDeterministic(True)
         torch.manual_seed(0)
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         batch = torch.randn(size=(2, 3, 224, 224)).to(device_hpu)
 
         model = self._create_model(with_fsdp, with_nested_trunk, freeze_after_wrap_fsdp)
