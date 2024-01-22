@@ -23,7 +23,7 @@ import copyreg
 import pickle
 import torch._weights_only_unpickler as _weights_only_unpickler
 
-DEFAULT_PROTOCOL = 2
+DEFAULT_PROTOCOL = 4
 
 LONG_SIZE = struct.Struct('=l').size
 INT_SIZE = struct.Struct('=i').size
