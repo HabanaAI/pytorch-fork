@@ -168,9 +168,9 @@ class TestShardedGradScalerParityWithDDP(FSDPTest):
         init_modes = self._get_init_modes_for_test(cpu_offload)
         mp = (
             MixedPrecision(
-                param_dtype=torch.bfloat16,
-                reduce_dtype=torch.bfloat16,
-                buffer_dtype=torch.bfloat16,
+                param_dtype=torch.float16,
+                reduce_dtype=torch.float16,
+                buffer_dtype=torch.float16,
             )
             if mixed_precision is not None
             else None
