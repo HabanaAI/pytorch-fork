@@ -129,9 +129,9 @@ class TestParityWithDDP(FSDPTest):
         sharding_strategy: Optional[ShardingStrategy],
     ):
         mixed_precision = MixedPrecision(
-            param_dtype=torch.bfloat16,
-            buffer_dtype=torch.bfloat16,
-            reduce_dtype=torch.bfloat16,
+            param_dtype=torch.float16,
+            buffer_dtype=torch.float16,
+            reduce_dtype=torch.float16,
         )
         self.run_subtests(
             self._get_subtest_config(cpu_offload),
