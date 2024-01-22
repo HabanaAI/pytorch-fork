@@ -203,7 +203,7 @@ class TestGradAcc(FSDPTest):
         ]
 
         # Compare the losses and gradients
-        torch.testing.assert_close(ref_loss, acc_loss, atol=1e-03, rtol=1e-03))
+        torch.testing.assert_close(ref_loss, acc_loss, atol=1e-03, rtol=1e-03)
         self.assertEqual(len(ref_grads), len(acc_grads))
         for ref_grad, acc_grad in zip(ref_grads, acc_grads):
             self.assertEqual(ref_grad.device, acc_grad.device)
