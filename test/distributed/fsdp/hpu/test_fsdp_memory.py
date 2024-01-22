@@ -1,6 +1,7 @@
 # Owner(s): ["oncall: distributed"]
 
 import sys
+import unittest
 
 import torch
 import torch.nn as nn
@@ -31,17 +32,19 @@ if TEST_WITH_DEV_DBG_ASAN:
 
 def get_cur_mem(rank, result, prefix):
     """Collect memory allocated values in a result dict in MB"""
-    torch._C._cuda_clearCublasWorkspaces()
-    result[prefix] = round(torch.cuda.memory_allocated() / 1024 / 1024)
+    import habana_frameworks.torch.hpu as htcore
+    result[prefix] = round(htcore.memory_allocated() / 1024 / 1024)
 
 
 class Model(nn.Module):
     def __init__(self, hidden_dim, with_fsdp=False, with_checkpoint=False):
+        import habana_frameworks.torch as ht
+        device_hpu = torch.device("hpu",  ht.hpu.current_device())
         super().__init__()
         if with_fsdp:
             self.stem = nn.Sequential(
                 nn.Conv2d(3, 64, kernel_size=3),
-                FSDP(nn.BatchNorm2d(64)),
+                FSDP(nn.BatchNorm2d(64).to(device_hpu)),
                 nn.ReLU(inplace=True),
             )
         else:
@@ -53,13 +56,13 @@ class Model(nn.Module):
         if with_fsdp:
             self.blocks = nn.Sequential(
                 nn.Conv2d(64, hidden_dim, kernel_size=5, padding=2),
-                FSDP(nn.BatchNorm2d(hidden_dim)),
+                FSDP(nn.BatchNorm2d(hidden_dim).to(device_hpu)),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size=5, padding=2),
-                FSDP(nn.BatchNorm2d(hidden_dim)),
+                FSDP(nn.BatchNorm2d(hidden_dim).to(device_hpu)),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size=5, padding=2),
-                FSDP(nn.BatchNorm2d(hidden_dim)),
+                FSDP(nn.BatchNorm2d(hidden_dim).to(device_hpu)),
                 nn.ReLU(inplace=True),
                 nn.AdaptiveAvgPool2d(output_size=(1, 1)),
                 nn.Flatten(),
@@ -88,19 +91,19 @@ class Model(nn.Module):
         else:
             return self.head(self.blocks(self.stem(x)))
 
+import habana_frameworks.torch as ht
+device_hpu = torch.device("hpu",  ht.hpu.current_device())
 
 def create_model(with_fsdp, with_checkpoint, model_hidden_dim):
     torch.manual_seed(0)
-    model = Model(model_hidden_dim, with_fsdp, with_checkpoint)
+    model = Model(model_hidden_dim, with_fsdp, with_checkpoint).to(device_hpu)
     if with_fsdp:
-        model.stem = FSDP(model.stem)
-        model.blocks = FSDP(model.blocks)
-        model.head = FSDP(model.head)
+        model.stem = FSDP(model.stem.to(device_hpu))
+        model.blocks = FSDP(model.blocks.to(device_hpu))
+        model.head = FSDP(model.head.to(device_hpu))
 
     return model
 
-import habana_frameworks.torch as ht
-device_hpu = torch.device("hpu",  ht.hpu.current_device())
 
 class TestFSDPMemory(FSDPTest):
     @property
@@ -119,7 +122,7 @@ class TestFSDPMemory(FSDPTest):
             model_hidden_dim=model_hidden_dim,
         )
         model = model.to(device_hpu)
-        model = FSDP(model)
+        model = FSDP(model, device_id=device_hpu)
 
         # We enable momentum so that after the first iteration, the optimizer state is added
         # to the total memory used.
@@ -155,10 +158,10 @@ class TestFSDPMemory(FSDPTest):
                 if abs(exp - v) > 1:  # allow 1MB rounding differences
                     ret += f"{k}: got {v}, expected {exp}\n"
             return ret
-
         output = cmp(results, expected)
         self.assertEqual(output, "")
 
+    @unittest.skipIf(ht.hpu.is_available(), "Memory will be differnt for CUDA and HPU, skipping")
     @skip_if_lt_x_gpu(2)
     @parametrize("ckpt", ["no_ckpt", "ckpt"])
     def test_fsdp_memory(self, ckpt):
@@ -167,7 +170,7 @@ class TestFSDPMemory(FSDPTest):
 
         model = create_model(
             with_fsdp=False, with_checkpoint=False, model_hidden_dim=model_hidden_dim
-        ).to(device_hpu)()
+        ).to(device_hpu)
         model_size_mb = round(ht.hpu.memory_allocated() / 1024 / 1024)
         del model
 
