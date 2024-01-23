@@ -284,6 +284,7 @@ class TestCommunicationHooks(FSDPTest):
             model = Net(False, None, None).to(torch.device("hpu", ht.hpu.current_device()))
             fsdp_model = FSDP(
                 model,
+                process_group=(dist.new_group(), dist.new_group()),
                 device_id=torch.device("hpu", ht.hpu.current_device()),
                 auto_wrap_policy=ModuleWrapPolicy({nn.Linear}),
                 sharding_strategy=sharding_strategy,
