@@ -201,7 +201,7 @@ class TestFSDPHybridShard(FSDPTest):
             msd = model.state_dict()
             osd = FSDP.optim_state_dict(model, optim)
 
-        load_model = fsdp_ctor(MyModel().to(device_hpu)
+        load_model = fsdp_ctor(MyModel().to(device_hpu))
         load_optim = torch.optim.AdamW(load_model.parameters())
         with FSDP.state_dict_type(load_model, StateDictType.SHARDED_STATE_DICT):
             load_model.load_state_dict(msd)
