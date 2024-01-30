@@ -2,13 +2,13 @@
 
 import sys
 import time
+import unittest
 from statistics import mean
 from unittest.mock import patch
 
 import torch
 import torch.nn as nn
 from torch import distributed as dist
-from torch.cuda import Event
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import FSDPTest
@@ -17,6 +17,7 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TEST_WITH_DEV_DBG_ASAN,
 )
+import habana_frameworks.torch as ht
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -40,13 +41,13 @@ class Layer(nn.Module):
 
     def forward(self, x):
         # Get 2 events.
-        self.e1 = Event(enable_timing=True)
-        self.e2 = Event(enable_timing=True)
+        self.e1 = ht.hpu.Event(enable_timing=True)
+        self.e2 = ht.hpu.Event(enable_timing=True)
 
         # Record the fake forward compute time.
         self.e1.record()
         if self.sleep_cycles > 0:
-            torch.cuda._sleep(self.sleep_cycles)
+            time.sleep(self.sleep_cycles)
         if self.optional_param is not None:
             x = x + self.optional_param  # force the param to be part of the graph
         self.e2.record()
@@ -60,15 +61,17 @@ class Layer(nn.Module):
 def _create_model(compute_cycles, has_params: bool):
     # Use `limit_all_gathers=False` since the timing being tested relies on the
     # CPU running ahead of the GPU
+    device_hpu = torch.device("hpu", ht.hpu.current_device())
     model = FSDP(
         nn.Sequential(
-            FSDP(Layer(compute_cycles, has_params), limit_all_gathers=False),
-            FSDP(Layer(compute_cycles, has_params), limit_all_gathers=False),
-            FSDP(Layer(compute_cycles, has_params), limit_all_gathers=False),
-            FSDP(Layer(compute_cycles, has_params), limit_all_gathers=False),
+            FSDP(Layer(compute_cycles, has_params), device_id=device_hpu, limit_all_gathers=False),
+            FSDP(Layer(compute_cycles, has_params), device_id=device_hpu, limit_all_gathers=False),
+            FSDP(Layer(compute_cycles, has_params), device_id=device_hpu, limit_all_gathers=False),
+            FSDP(Layer(compute_cycles, has_params), device_id=device_hpu, limit_all_gathers=False),
         ),
+        device_id=device_hpu,
         limit_all_gathers=False,
-    ).cuda()
+    )
     return model
 
 
@@ -99,6 +102,7 @@ class TestForwardOverlapWorldSizeOne(FSDPTest):
         # Save the original torch.distributed.all_gather_into_tensor function since we will
         # patch it to include an artificial delay.
         orig_all_gather = torch.distributed.all_gather_into_tensor
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
 
         def run(compute_cycles, all_gather_cycles):
             has_params = all_gather_cycles > 0
@@ -106,7 +110,7 @@ class TestForwardOverlapWorldSizeOne(FSDPTest):
 
             # Get the input and sets the input's requires_grad to True because
             # we have a fake compute in the forward pass.
-            batch = torch.rand(1).cuda()
+            batch = torch.rand(1).to(device_hpu)
             batch.requires_grad = True
 
             # Run one dummy iteration to trigger the execution order validation
@@ -123,8 +127,8 @@ class TestForwardOverlapWorldSizeOne(FSDPTest):
             gpu_total = Min10()
             for _ in range(20):
                 # Get two events for measuring the overall time.
-                e1 = Event(enable_timing=True)
-                e2 = Event(enable_timing=True)
+                e1 = ht.hpu.Event(enable_timing=True)
+                e2 = ht.hpu.Event(enable_timing=True)
 
                 cpu_start = time.process_time()
 
@@ -133,7 +137,7 @@ class TestForwardOverlapWorldSizeOne(FSDPTest):
                 def _delayed_all_gather(*args, **kwargs):
                     nonlocal all_gather_called
                     all_gather_called = True
-                    torch.cuda._sleep(all_gather_cycles)
+                    time.sleep(all_gather_cycles)
                     assert orig_all_gather
                     return orig_all_gather(*args, **kwargs)
 
@@ -240,6 +244,7 @@ class TestForwardOverlapWorldSizeOne(FSDPTest):
             both = e4["gpu_total"]
             self.assertTrue(compute_only + all_gather_only > 1.1 * both)
 
+    @unittest.skipIf(ht.hpu.is_available(), "HPU doesn't has HW sleep API support (like CUDA), skipping")
     @skip_if_lt_x_gpu(2)
     def test_forward_overlap(self):
         self._dist_train()

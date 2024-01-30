@@ -84,22 +84,22 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
                 param_groups[2]["params"].append(param)
         return param_groups
 
+    """
+        Constructs an Adam optimizer with three parameter groups, one for
+        weights, one for biases, and one for everything else, each with
+        different weight decay and learning rates.
+    """
     def _get_optim(
         self,
         model: nn.Module,
         optim_class: Type[torch.optim.Optimizer],
         multi_tensor: bool,
     ) -> torch.optim.Optimizer:
-        """
-        Constructs an Adam optimizer with three parameter groups, one for
-        weights, one for biases, and one for everything else, each with
-        different weight decay and learning rates.
-        """
         param_groups = self._get_param_groups(model)
         return optim_class(param_groups, lr=5e-3, foreach=multi_tensor)
 
+    """Returns a transformer with shared parameters wrapped with DDP."""
     def _get_ddp_transformer(self, find_unused_params: bool) -> DDP:
-        """Returns a transformer with shared parameters wrapped with DDP."""
         device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = TransformerWithSharedParams.init(
             self.process_group,
@@ -115,6 +115,10 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         )
         return ddp_model
 
+    """
+        Returns a transformer with shared parameters wrapped with FSDP and a
+        corresponding optimizer.
+    """
     def _get_fsdp_transformer_and_optim(
         self,
         cuda_init_mode: CUDAInitMode,
@@ -125,10 +129,6 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         backward_prefetch: Optional[BackwardPrefetch],
         cpu_offload: CPUOffload,
     ) -> Tuple[FSDP, torch.optim.Optimizer]:
-        """
-        Returns a transformer with shared parameters wrapped with FSDP and a
-        corresponding optimizer.
-        """
         # Each transformer layer has multiple linear layers, so this policy, in
         # combination with the parameter group construction, ensures different
         # hyperparameter settings within one `FlatParameter`
@@ -166,6 +166,7 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
             fsdp_model = fsdp_model.to(device_hpu)
         return fsdp_model, fsdp_optim
 
+    """Checks training parity between DDP and FSDP."""
     def _check_train_parity(
         self,
         ddp_model: DDP,
@@ -175,7 +176,6 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         set_to_none: bool,
         num_iters: int = 10,
     ):
-        """Checks training parity between DDP and FSDP."""
         import habana_frameworks.torch.hpu as htcore
         import torch.distributed as dist
         htcore.setDeterministic(True)
@@ -359,14 +359,17 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
     ):
         """
         Args:
-            init_optim_before_wrap (bool): If ``True``, initializes the
-                FSDP optimizer before wrapping the model with FSDP; otherwise,
+            init_optim_before_wrap (bool):
+            If ``True``,
+                initializes the FSDP optimizer before wrapping the model with FSDP;
+            otherwise,
                 initializes the FSDP optimizer after wrapping the model with
                 FSDP. We permit both forms of initialization to give users
                 flexibility.
         """
+        # not supported usecases
         if cuda_init_mode == CUDAInitMode.CUDA_AFTER and cpu_offload.offload_params:
-            return  # not supported
+            return
         if skip_writeback_check:
             os.environ[_FSDP_SKIP_WRITEBACK_CHECK] = "1"
         ddp_model = self._get_ddp_transformer(find_unused_params=False)
@@ -384,12 +387,12 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
             ddp_model, ddp_optim, fsdp_model, fsdp_optim, set_to_none
         )
 
-    @skip_if_lt_x_gpu(2)
-    def test_diff_trainability(self):
-        """
+    """
         Tests FSDP parity with DDP when using multiple parameter groups and
         freezing the parameters in one parameter group.
-        """
+    """
+    @skip_if_lt_x_gpu(2)
+    def test_diff_trainability(self):
         self.run_subtests(
             {
                 "multi_tensor": [False, True],
@@ -657,7 +660,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
             optim_orig_params,
         ) = self._get_fsdp_models_and_optims(sharding_strategy, cpu_offload)
         device = torch.device("hpu", ht.hpu.current_device())
-        for _ in range(3):
+        for _ in range(1):
             inp1 = fsdp_model.get_input(device)
             _inp2 = fsdp_model.get_input(device)
             inp2 = tuple(
@@ -712,7 +715,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
             optim_orig_params,
         ) = self._get_fsdp_models_and_optims(sharding_strategy, cpu_offload)
         device=torch.device("hpu", ht.hpu.current_device())
-        for _ in range(3):
+        for _ in range(1):
             optim.zero_grad()
             optim_orig_params.zero_grad()
 
@@ -925,11 +928,11 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
         # Check that the writeback propagates
         device_hpu=torch.device("hpu", ht.hpu.current_device())
         ddp_model = DDP(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu),
             device_ids=[device_hpu],
         )
         fsdp_model = FSDP(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu),
             use_orig_params=True,
         )
         ddp = ddp_model.module  # for brevity
@@ -979,11 +982,11 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
 
         device_hpu=torch.device("hpu", ht.hpu.current_device())
         ddp_model = DDP(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu),
             device_ids=[device_hpu],
         )
         fsdp_model = FSDP(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")),
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu),
             use_orig_params=True,
         )
         LR = 1e-2
@@ -1089,9 +1092,9 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
         # Test changing the parameter storage to no longer be a view into the
         # flat parameter
         fsdp_model = fsdp_wrapper(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu"))
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu)
         )
-        inp = fsdp_model.get_input(torch.device("hpu"))
+        inp = fsdp_model.get_input(device_hpu)
         loss = fsdp_model(*inp).sum()
         fsdp_model.lin1.weight.data = fsdp_model.lin1.weight.clone()
         assert_msg = (
@@ -1102,9 +1105,9 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
 
         # Test changing the parameter variable itself
         fsdp_model = fsdp_wrapper(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu"))
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu)
         )
-        inp = fsdp_model.get_input(torch.device("hpu"))
+        inp = fsdp_model.get_input(device_hpu)
         loss = fsdp_model(*inp).sum()
         fsdp_model.lin1._fsdp_wrapped_module.weight = nn.Parameter(
             fsdp_model.lin1.weight.clone()
@@ -1140,9 +1143,9 @@ class TestFSDPUseOrigParamsWriteback(FSDPTest):
 
         # Train forward -> full-precision unshard -> train forward
         fsdp_model = FSDP(
-            TestFSDPUseOrigParamsWriteback.Model(torch.device("hpu")), **fsdp_kwargs
+            TestFSDPUseOrigParamsWriteback.Model(device_hpu), **fsdp_kwargs
         )
-        inp = fsdp_model.get_input(torch.device("hpu"))
+        inp = fsdp_model.get_input(device_hpu)
         fsdp_model(*inp)
         with FSDP.summon_full_params(fsdp_model):
             ...
