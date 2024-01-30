@@ -4753,6 +4753,16 @@ def get_cycles_per_ms() -> float:
         cycles_per_ms = 1000000 / start.elapsed_time(end)
         return cycles_per_ms
 
+    def measure_hpu() -> float:
+        import habana_frameworks.torch as ht
+        start = ht.hpu.Event(enable_timing=True)
+        end = ht.hpu.Event(enable_timing=True)
+        start.record()
+        time.sleep(1000000)
+        end.record()
+        end.synchronize()
+        cycles_per_ms = 1000000 / start.elapsed_time(end)
+        return cycles_per_ms
     # Get 10 values and remove the 2 max and 2 min and return the avg.
     # This is to avoid system disturbance that skew the results, e.g.
     # the very first cuda call likely does a bunch of init, which takes
@@ -4764,7 +4774,7 @@ def get_cycles_per_ms() -> float:
     num = 10
     vals = []
     for _ in range(num):
-        vals.append(measure())
+        vals.append(measure_hpu())
     vals = sorted(vals)
     return mean(vals[2 : num - 2])
 
