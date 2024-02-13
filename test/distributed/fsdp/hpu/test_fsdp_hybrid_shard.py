@@ -161,7 +161,7 @@ class TestFSDPHybridShard(FSDPTest):
     @skip_if_lt_x_gpu(4)
     def test_hsdp_save_load_state_dict(self):
         model = MyModel().to(device_hpu)
-        num_node_devices = ht.hpu.device_count()
+        num_node_devices = 2# Need only 2 devices for this test
         shard_rank_lists = list(range(0, num_node_devices // 2)), list(
             range(num_node_devices // 2, num_node_devices)
         )
