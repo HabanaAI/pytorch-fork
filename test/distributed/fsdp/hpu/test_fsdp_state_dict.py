@@ -1211,7 +1211,7 @@ class TestFSDPStateDict(FSDPTest):
         }
         for load_cpu in [True, False]:
             with self.subTest(load_cpu=load_cpu):
-                pg = dist.new_group(backend="cpu:gloo,cuda:nccl,hpu:hccl")
+                pg = dist.new_group(backend="cpu:gloo,hpu:hccl")
                 fsdp_model = TransformerWithSharedParams.init(
                     pg,
                     FSDPInitMode.RECURSIVE,
