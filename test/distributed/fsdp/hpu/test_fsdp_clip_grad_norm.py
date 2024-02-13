@@ -31,7 +31,6 @@ from torch.testing._internal.common_utils import (
 )
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -64,6 +63,7 @@ class TestClipGradNorm(FSDPTest):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return self.lin2(self.lin1(x))
 
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model().to(device_hpu)
         model.lin2 = FSDP(model.lin2)
         fsdp_model = FSDP(model)
@@ -107,6 +107,7 @@ class TestClipGradNorm(FSDPTest):
             CUDAInitMode.CUDA_BEFORE,
             deterministic=True,
         )
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         ddp_model = DDP(local_model, device_ids=[device_hpu])
         fsdp_kwargs = {
             "cpu_offload": CPUOffload(offload_params=offload_params),
@@ -267,6 +268,7 @@ class TestClipGradNorm(FSDPTest):
         sharding_strategy: ShardingStrategy,
         use_orig_params: bool,
     ):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_kwargs = {
             "sharding_strategy": sharding_strategy,
             "use_orig_params": use_orig_params,
@@ -323,6 +325,7 @@ class TestClipGradNorm(FSDPTest):
             reduce_dtype=torch.float32,
             buffer_dtype=torch.float32,
         )
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         fsdp_module = FSDP(
             lin_module,
             sharding_strategy=ShardingStrategy.SHARD_GRAD_OP,
