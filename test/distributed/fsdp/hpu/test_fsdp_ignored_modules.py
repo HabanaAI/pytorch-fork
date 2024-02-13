@@ -25,7 +25,6 @@ from torch.testing._internal.common_utils import (
 )
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -150,7 +149,10 @@ class TestFSDPIgnoredModules(FSDPTest):
             CUDAInitMode.CUDA_BEFORE,
             deterministic=True,
         )
-        fsdp_kwargs = {"process_group": self.process_group}
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        fsdp_kwargs = {"process_group": self.process_group,
+                       "device_id": device_hpu,
+                      }
         if use_auto_wrap:
             # Unshare the output projection weight and embedding weight to be
             # able to auto wrap every linear correctly
@@ -234,6 +236,7 @@ class TestFSDPIgnoredModules(FSDPTest):
         # Initialize an FSDP-wrapped nested model that first wraps the nested
         # sequential's second linear layer (`layer1[1]`) and then wraps the
         # overall model while ignoring the nested sequential (`layer1`)
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model().to(device_hpu)
         fsdp_fn = (
             fully_shard
@@ -328,6 +331,7 @@ class TestFSDPIgnoredModules(FSDPTest):
     def test_ignored_modules_invalid(self, composable):
         """Tests that passing an FSDP module as an ignored module or the
         top-level module itself errors."""
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model().to(device_hpu)
         wrap_cls = FSDP if composable else fully_shard
         model.layer1 = wrap_cls(model.layer1)
@@ -379,6 +383,7 @@ class TestFSDPIgnoredModules(FSDPTest):
         # To exercise different `FlatParameter` enumerations across ranks,
         # we wrap `layer3` with FSDP, where `layer3` is registered as a module
         # after `layer1`, which has the variable number of ignored modules
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         wrap_cls = FSDP if composable else fully_shard
         model = ModelWithIgnoredModules(num_ignored=self.rank + 1).to(device_hpu)
         layer1_ignored_modules = [
@@ -419,6 +424,7 @@ class TestFSDPIgnoredModules(FSDPTest):
     def test_ignored_modules_not_under_wrapped_root(
         self, ignore_modules: bool, composable: bool
     ):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model().to(device_hpu)
         ignored_modules = list(model.layer1.children())[1:]
 
@@ -458,6 +464,7 @@ class TestFSDPIgnoredModules(FSDPTest):
         )
 
     def _test_ignored_states_check(self, ignore_modules: bool):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model().to(device_hpu)
         ignored_modules = list(model.layer1.children())[1:]
         ignored_params = {p for m in ignored_modules for p in m.parameters()}
