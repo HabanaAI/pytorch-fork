@@ -296,7 +296,7 @@ class TestFSDPHybridShard(FSDPTest):
         use_orig_params: bool,
     ):
         hsdp_model = self._init_hsdp_model(
-            hsdp_sharding_strategy, sharding_strategy_mode, use_orig_params
+            hsdp_sharding_strategy, sharding_strategy_mode, use_orig_params, self.process_group
         )
         # All FSDP modules should have state.process_group as the process group over which to
         # shard (default process group), and state._inter_node_pg (process group containing only
@@ -324,7 +324,7 @@ class TestFSDPHybridShard(FSDPTest):
             intra_node_pgs.add(fsdp_module.process_group)
             inter_node_pg = fsdp_module._inter_node_pg
             inter_node_pgs.add(inter_node_pg)
-            self.assertEqual(1, dist.get_world_size(inter_node_pg))
+            self.assertEqual(2, dist.get_world_size(inter_node_pg))
             self.assertFalse(_rank_not_in_group(inter_node_pg))
             self.assertEqual(hsdp_sharding_strategy, fsdp_module.sharding_strategy)
         # All fsdp modules should share the same process groups
@@ -439,9 +439,10 @@ class TestFSDPHybridShard(FSDPTest):
             "sharding_strategy": hsdp_sharding_strategy,
             "use_orig_params": use_orig_params,
         }
+        process_groups = (self.process_group,  hsdp_process_groups)
         if sharding_strategy_mode == ShardingStrategyMode.ALL_HYBRID_SHARD:
             hsdp_model = TransformerWithSharedParams.init(
-                hsdp_process_groups or self.process_group,
+                process_groups,
                 FSDPInitMode.RECURSIVE,
                 CUDAInitMode.CUDA_BEFORE,
                 hsdp_kwargs,
@@ -449,14 +450,14 @@ class TestFSDPHybridShard(FSDPTest):
             )
         elif sharding_strategy_mode == ShardingStrategyMode.MIXED_HYBRID_FULL_SHARD:
             model = TransformerWithSharedParams.init(
-                hsdp_process_groups or self.process_group,
+                process_groups,
                 FSDPInitMode.NO_FSDP,
                 CUDAInitMode.CUDA_BEFORE,
                 {},
                 deterministic=True,
             )
             # Use the HSDP strategy for the transformer module
-            model.transformer = FSDP(model.transformer, **hsdp_kwargs)
+            model.transformer = FSDP(model.transformer, process_groups, **hsdp_kwargs)
             # Use `FULL_SHARD` for the embedding and output projection
             hsdp_model = FSDP(
                 model,
