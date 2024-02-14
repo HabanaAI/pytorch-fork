@@ -80,6 +80,7 @@ TEST_SKIPS = {
         86, "Test skipped at subprocess level, look at subprocess log for skip reason"
     ),
     "importerror": TestSkip(88, "Test skipped due to missing import"),
+    "no_hpu": TestSkip(88, "HPU is not available."),
 }
 
 
