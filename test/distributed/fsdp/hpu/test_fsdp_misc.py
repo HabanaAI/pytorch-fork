@@ -3,6 +3,7 @@
 import functools
 import os
 import sys
+import unittest
 import warnings
 from collections import namedtuple
 from contextlib import nullcontext
@@ -60,6 +61,9 @@ if TEST_WITH_DEV_DBG_ASAN:
     )
     sys.exit(0)
 
+def is_hpu():
+    import habana_frameworks.torch as ht
+    return ht.hpu.is_available()
 
 class MyModel(nn.Module):
     def __init__(self):
@@ -548,65 +552,29 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 self.assertEqual(losses[0], losses[1])
 
     @skip_if_lt_x_gpu(2)
-    def test_fsdp_cpu_training(self):
-        """Tests FSDP training on CPU."""
-        gloo_pg = dist.new_group(backend="gloo")
-        for ss in [
-            ShardingStrategy.NO_SHARD,
-            ShardingStrategy.FULL_SHARD,
-            ShardingStrategy.SHARD_GRAD_OP,
-            ShardingStrategy.HYBRID_SHARD,
-            ShardingStrategy._HYBRID_SHARD_ZERO2,
-        ]:
-            torch.manual_seed(42)
-            model = MyModel()
-            ref_model = DDP(deepcopy(model), process_group=gloo_pg)
-            model = FSDP(
-                model,
-                auto_wrap_policy=always_wrap_policy,
-                process_group=gloo_pg,
-                device_id=torch.device("cpu"),
-            )
-            ref_optim = torch.optim.Adam(ref_model.parameters(), lr=1e-2)
-            optim = torch.optim.Adam(model.parameters(), lr=1e-2)
-            torch.manual_seed(42 + self.rank)
-            inp = torch.randn(2, 2)
-            for _ in range(10):
-                losses = []
-                for _model, _optim in ((ref_model, ref_optim), (model, optim)):
-                    loss = _model(inp, inp).sum()
-                    losses.append(loss)
-                    loss.backward()
-                    _optim.step()
-                    _optim.zero_grad()
-                self.assertEqual(losses[0], losses[1])
-
-    @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(is_hpu(), "Multi device id is not support on HPU")
     def test_fsdp_cpu_init_stays_on_cpu(self):
         # Move me to MT test once warning logging and backward collective issue
         # is resolved.
         """Tests that passing a CPU module to FSDP preserves that the wrapped
         module is on CPU after FSDP initialization, albeit after logging a
         warning, and that FSDP moves CPU input to GPU before the forward."""
-        # torch.cuda.set_device(self.rank)
-        # ht.hpu.set_device(self.rank)
+        torch.cuda.set_device(self.rank)
         regex = "passed-in `module` is on CPU"
         context = self.assertWarnsRegex(
             expected_warning=UserWarning, expected_regex=regex
         )
-        fsdp_kwargs = {"device_id": device_hpu}
         with context:
             nested_wrapped_module = NestedWrappedModule.init(
                 self.process_group,
                 FSDPInitMode.RECURSIVE,
                 CUDAInitMode.CUDA_NEVER,
-                fsdp_kwargs=fsdp_kwargs,
             )
-            fsdp_model = FSDP(nested_wrapped_module, self.process_group, device_id = device_hpu)
+            fsdp_model = FSDP(nested_wrapped_module, self.process_group)
         devices = {p.device for p in fsdp_model.parameters()}
         self.assertEqual(1, len(devices))
         self.assertEqual(torch.device("cpu"), devices.pop())
-        fsdp_model = fsdp_model.to(device_hpu)
+        fsdp_model = fsdp_model.cuda()
         # Ensure fwd + backward can be performed after moving to CUDA.
         # CPU input also tests that input is correctly moved to appropriate
         # CUDA device.
@@ -786,14 +754,15 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
             self.assertEqual(handle.flat_param.device, cpu_device)
 
     @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(is_hpu(), "Multi device id is not support on HPU")
     def test_module_device_mismatches_device_id(self):
         """Tests that specifying a ``device_id`` argument to FSDP for a GPU
         module that does not match the GPU device ID raises an error."""
         # TODO: override FSDP MT Thread _run to set this instead of here for
         # every test.
-        ht.hpu.set_device(self.rank)
+        torch.cuda.set_device(self.rank)
         context = (
-            self.assertRaisesRegex(ValueError, f"hpu:{self.rank} vs hpu:0")
+            self.assertRaisesRegex(ValueError, f"cuda:{self.rank} vs cuda:0")
             if self.rank != 0
             else nullcontext()
         )
@@ -805,7 +774,7 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
                 cuda_init_mode=CUDAInitMode.CUDA_BEFORE,
                 # Should raise error since rank 1 is given `device_id=0` when
                 # the model is on cuda:1
-                fsdp_kwargs={"device_id": torch.device("hpu:0")},
+                fsdp_kwargs={"device_id": 0},
             )
 
     @skip_if_lt_x_gpu(2)
@@ -942,6 +911,7 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
             FSDP(MultiGPUModule(self.rank))
 
     @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(is_hpu(), "Multi device id is not support on HPU")
     def test_no_params(self):
         """
         Test that device_id and cpu init work if module has no params
@@ -950,32 +920,31 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
         """
         # TODO: override FSDP MT Thread _run to set this instead of here for
         # every test.
-        ht.hpu.set_device(self.rank)
-        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        torch.cuda.set_device(self.rank)
         # Test CPU
         no_params = nn.ReLU()
-        module = FSDP(no_params, device_id = torch.device("cpu"))
+        module = FSDP(no_params)
         # Test CUDA
-        no_params = nn.ReLU().to(torch.device("hpu"))
-        module = FSDP(no_params, device_id = device_hpu)
+        no_params = nn.ReLU().cuda()
+        module = FSDP(no_params)
         # Test CPU + device_id
         no_params = nn.ReLU()
-        module = FSDP(no_params, device_id=device_hpu)
+        module = FSDP(no_params, device_id=torch.cuda.current_device())
         # For modules with no params, wrong device_id will raise error about
         # inconsistency between compute_device and device_id, since compute_device
         # is computed as torch.cuda.current_device when there are no params.
-        no_params = nn.ReLU().to(device_hpu)
+        no_params = nn.ReLU().cuda()
         context = (
             (
                 self.assertRaisesRegex(
-                    ValueError, f"Inconsistent.*hpu:{self.rank} vs hpu:0"
+                    ValueError, f"Inconsistent.*cuda:{self.rank} vs cuda:0"
                 )
             )
             if self.rank != 0
             else nullcontext()
         )
         with context:
-            FSDP(no_params, device_id=device_hpu)
+            FSDP(no_params, device_id=0)
 
     @skip_if_lt_x_gpu(2)
     def test_fsdp_same_model_across_ranks(self):
