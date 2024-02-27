@@ -657,6 +657,7 @@ class TestFSDPMixedPrecisionSharded(TestFSDPMixedPrecision):
         )
 
     @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(ht.hpu.is_available(), "BN doesnt support mixture of fp32/fp16 ")
     @skipIfNoTorchVision
     def test_mixed_precision_resnet(self):
         """

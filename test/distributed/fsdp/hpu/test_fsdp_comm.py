@@ -220,7 +220,7 @@ class TestCommunication(FSDPTest):
             sharding_strategy (Optional[ShardingStrategy]): Configures the
                 FSDP algorithm.
         """
-	# Enable execution order checking
+        # Enable execution order checking
         dist.set_debug_level(dist.DebugLevel.DETAIL)
         # Initialize the model and inputs
         device = torch.device("hpu")

@@ -1,5 +1,7 @@
 # Owner(s): ["oncall: distributed"]
 
+import functools
+import math
 import sys
 
 import torch
@@ -95,7 +97,7 @@ class ModelWithIgnoredModules(Model):
 class TestFSDPIgnoredModules(FSDPTest):
     @property
     def world_size(self):
-        return min(torch.cuda.device_count(), 2)
+        return min(ht.hpu.device_count(), 2)
 
     def _train_model(self, model, optim, num_iters, device=torch.device("hpu")):
         for _ in range(num_iters):
@@ -249,7 +251,7 @@ class TestFSDPIgnoredModules(FSDPTest):
         else:
             wrapped_model = fsdp_fn(
                 model, ignored_states=list(model.layer1.parameters())
-	    )
+            )
         # Check that the wrapped model's flattened parameter does not include
         # the ignored nested sequential's parameters
         nonwrapped_model = Model()
@@ -292,7 +294,8 @@ class TestFSDPIgnoredModules(FSDPTest):
         )
 
     def _test_ignored_states_auto_wrap(self, policy, ignore_bias: bool):
-        model = Model().cuda()
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        model = Model().to(device_hpu)
         ignored_states = [model.layer1[1].weight]
         if ignore_bias:
             ignored_states.append(model.layer1[1].bias)
@@ -326,6 +329,56 @@ class TestFSDPIgnoredModules(FSDPTest):
         self.assertLessEqual(
             fsdp_model.module._flat_param.numel(), expected_model_sharded_numel
         )
+    @skip_if_lt_x_gpu(2)
+    def test_ignored_states_auto_wrap(self):
+        transformer_policy = functools.partial(
+            transformer_auto_wrap_policy, transformer_layer_cls={nn.Sequential}
+        )
+        self.run_subtests(
+            {
+                "policy": [transformer_policy, ModuleWrapPolicy((nn.Sequential,))],
+                "ignore_bias": [True, False],
+            },
+            self._test_ignored_states_auto_wrap,
+        )
+
+    def _test_ignored_states_auto_wrap(self, policy, ignore_bias: bool):
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        model = Model().to(device_hpu)
+        ignored_states = [model.layer1[1].weight]
+        if ignore_bias:
+            ignored_states.append(model.layer1[1].bias)
+        # Construct 2 flat parameters: one for `layer1` and one for the model
+        fsdp_model = FSDP(
+            model,
+            # Use `False` to avoid complexity of intra-flat-parameter padding
+            use_orig_params=False,
+            auto_wrap_policy=policy,
+            ignored_states=ignored_states,
+        )
+        ref_model = Model()
+        expected_layer1_unsharded_numel = (
+            sum(p.numel() for p in ref_model.layer1.parameters())
+            - ref_model.layer1[1].weight.numel()
+        )
+        if ignore_bias:
+            expected_layer1_unsharded_numel -= ref_model.layer1[1].bias.numel()
+        expected_model_unsharded_numel = sum(
+            p.numel() for p in ref_model.parameters()
+        ) - sum(p.numel() for p in ref_model.layer1.parameters())
+        expected_layer1_sharded_numel = math.ceil(
+            expected_layer1_unsharded_numel / self.world_size
+        )
+        expected_model_sharded_numel = math.ceil(
+            expected_model_unsharded_numel / self.world_size
+        )
+        self.assertLessEqual(
+            fsdp_model.layer1.module._flat_param.numel(), expected_layer1_sharded_numel
+        )
+        self.assertLessEqual(
+            fsdp_model.module._flat_param.numel(), expected_model_sharded_numel
+        )
+
     @skip_if_lt_x_gpu(2)
     @parametrize("composable", [True, False])
     def test_ignored_modules_invalid(self, composable):

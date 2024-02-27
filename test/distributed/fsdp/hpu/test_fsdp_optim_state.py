@@ -560,14 +560,13 @@ class TestFSDPOptimState(FSDPTest):
         use_diff_optim_inputs: bool,
         use_optim_input: bool,
     ) -> None:
-        #Unsupported usecase
         if rank0_only and state_dict_type == StateDictType.SHARDED_STATE_DICT:
             return  # not supported
         import habana_frameworks.torch.hpu as htcore
         device = torch.device("hpu", ht.hpu.current_device())
-        htcore.setDeterministic(True)
+        #htcore.setDeterministic(True)
         torch.manual_seed(0)
-        NUM_ITERS = 2
+        NUM_ITERS = 3
         model1, optim1, optim_input = self._init_nested_model(
             wrap=True,
             use_multiple_param_groups=use_multiple_param_groups,
@@ -948,6 +947,7 @@ class TestFSDPOptimState(FSDPTest):
             num_iters=3,
             fsdp_kwargs={"use_orig_params": True},
         )
+
         self.run_subtests(
             {
                 "halve_world_size": [True, False],
@@ -965,6 +965,7 @@ class TestFSDPOptimState(FSDPTest):
             num_iters=3,
             fsdp_kwargs={"use_orig_params": True},
         )
+
         self.run_subtests(
             {
                 "wrap_alt": [True, False],
@@ -977,6 +978,8 @@ class TestFSDPOptimState(FSDPTest):
                 ShardedOptimStateDictConfig(),
             ),
             use_multiple_param_groups=False,
+            # We cannot test halve_world_size with SHARDED_STATE_DICT.
+            halve_world_size=False,
             use_diff_optim_inputs=False,
             num_iters=3,
             fsdp_kwargs={"use_orig_params": True},
@@ -1904,7 +1907,7 @@ class TestFSDPOptimState(FSDPTest):
         for state in osd["state"].values():
             for s in state.values():
                 self.assertFalse(isinstance(s, ShardedTensor))
-                self.assertFalse(s.is_cuda)
+                self.assertFalse(s.device.type == "hpu")
 
         # Test sharded state_dict without offload_to_cpu
         with FSDP.state_dict_type(
@@ -1920,7 +1923,7 @@ class TestFSDPOptimState(FSDPTest):
                         continue
                     self.assertTrue(isinstance(s, ShardedTensor))
                     if s._local_shards[0]:
-                        self.assertTrue(s._local_shards[0].tensor.is_cuda)
+                        self.assertTrue(s._local_shards[0].tensor.device.type == "hpu")
 
         # Test full state_dict with rank0_only
         with FSDP.state_dict_type(
@@ -1940,8 +1943,9 @@ class TestFSDPOptimState(FSDPTest):
                     for s in state.values():
                         if s.dim() == 0:
                             continue
-                        self.assertFalse(s.is_cuda)
+                        self.assertFalse(s.device.type == "hpu")
                         self.assertFalse(isinstance(s, ShardedTensor))
+
     @skip_if_lt_x_gpu(2)
     def test_state_dict_with_none_tensor_state(self):
         def _run_test(use_orig_params, optimizer_has_tensor_state):
@@ -1951,6 +1955,7 @@ class TestFSDPOptimState(FSDPTest):
                 torch.optim.Adam if optimizer_has_tensor_state else torch.optim.SGD
             )
             optim = optimizer_cls(model.parameters(), lr=1e-2)
+
             def step():
                 loss = model(model.get_input())
                 loss.backward(loss)
@@ -1968,7 +1973,7 @@ class TestFSDPOptimState(FSDPTest):
             for state in osd_to_load["state"].values():
                 self.assertEqual(state["value1"], 2.74)
                 self.assertEqual(state["value2"], None)
-	
+
         self.run_subtests(
             {
                 "use_orig_params": [False, True],
@@ -2009,7 +2014,8 @@ class TestFSDPOptimState(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_no_grad(self):
-        model = TestDummyModel(no_grad=True).cuda()
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        model = TestDummyModel(no_grad=True).to(device_hpu)
         fsdp_model = FSDP(deepcopy(model), use_orig_params=True)
         fsdp_optim = torch.optim.Adam(fsdp_model.parameters(), lr=1e-2)
 
