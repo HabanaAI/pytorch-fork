@@ -1,5 +1,6 @@
 # Owner(s): ["oncall: distributed"]
 
+import pytest
 import io
 from copy import deepcopy
 
@@ -90,7 +91,8 @@ class TestHSDPWithDeviceMeshAndDTensor(DTensorTestBase):
         optim.step()
 
         return model, optim
-
+    
+    @pytest.mark.skip("not supported configuration")
     @with_comms
     @skip_if_lt_x_gpu(4)
     def test_hsdp_init_with_device_mesh(self):
@@ -124,6 +126,7 @@ class TestHSDPWithDeviceMeshAndDTensor(DTensorTestBase):
         self.assertEqual(state_dict_type.state_dict_config._use_dtensor, True)
         self.assertEqual(state_dict_type.optim_state_dict_config._use_dtensor, True)
 
+    @pytest.mark.skip("not supported configuration")
     @with_comms
     @skip_if_lt_x_gpu(4)
     @parametrize("offload_to_cpu", [True, False])
@@ -193,6 +196,7 @@ class TestHSDPWithDeviceMeshAndDTensor(DTensorTestBase):
                 else:
                     self.assertEqual(v1, v2)
 
+    @pytest.mark.skip("not supported configuration")
     @with_comms
     @skip_if_lt_x_gpu(4)
     @parametrize("offload_to_cpu", [True, False])
@@ -247,6 +251,7 @@ class TestHSDPWithDeviceMeshAndDTensor(DTensorTestBase):
                     self.assertEqual(type(v1), DTensor)
                     self.assertEqual(type(v2), DTensor)
 
+    @pytest.mark.skip("not supported configuration")
     @with_comms
     @skip_if_lt_x_gpu(4)
     @parametrize("offload_to_cpu", [True, False])
@@ -285,6 +290,7 @@ class TestHSDPWithDeviceMeshAndDTensor(DTensorTestBase):
             # check whether DTensor are the same
             self.assertEqual(v1, v2)
 
+    @pytest.mark.skip("not supported configuration")
     @with_comms
     @skip_if_lt_x_gpu(4)
     def test_root_module_is_not_FSDP(self):

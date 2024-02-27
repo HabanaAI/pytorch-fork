@@ -84,21 +84,20 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
                 param_groups[2]["params"].append(param)
         return param_groups
 
-    """
-        Constructs an Adam optimizer with three parameter groups, one for
-        weights, one for biases, and one for everything else, each with
-        different weight decay and learning rates.
-    """
     def _get_optim(
         self,
         model: nn.Module,
         optim_class: Type[torch.optim.Optimizer],
         multi_tensor: bool,
     ) -> torch.optim.Optimizer:
+        """
+        Constructs an Adam optimizer with three parameter groups, one for
+        weights, one for biases, and one for everything else, each with
+        different weight decay and learning rates.
+        """
         param_groups = self._get_param_groups(model)
         return optim_class(param_groups, lr=5e-3, foreach=multi_tensor)
 
-    """Returns a transformer with shared parameters wrapped with DDP."""
     def _get_ddp_transformer(self, find_unused_params: bool) -> DDP:
         device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = TransformerWithSharedParams.init(
@@ -115,10 +114,6 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         )
         return ddp_model
 
-    """
-        Returns a transformer with shared parameters wrapped with FSDP and a
-        corresponding optimizer.
-    """
     def _get_fsdp_transformer_and_optim(
         self,
         cuda_init_mode: CUDAInitMode,
@@ -129,6 +124,10 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
         backward_prefetch: Optional[BackwardPrefetch],
         cpu_offload: CPUOffload,
     ) -> Tuple[FSDP, torch.optim.Optimizer]:
+        """
+        Returns a transformer with shared parameters wrapped with FSDP and a
+        corresponding optimizer.
+        """
         # Each transformer layer has multiple linear layers, so this policy, in
         # combination with the parameter group construction, ensures different
         # hyperparameter settings within one `FlatParameter`
@@ -166,7 +165,6 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
             fsdp_model = fsdp_model.to(device_hpu)
         return fsdp_model, fsdp_optim
 
-    """Checks training parity between DDP and FSDP."""
     def _check_train_parity(
         self,
         ddp_model: DDP,
@@ -359,10 +357,8 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
     ):
         """
         Args:
-            init_optim_before_wrap (bool):
-            If ``True``,
-                initializes the FSDP optimizer before wrapping the model with FSDP;
-            otherwise,
+            init_optim_before_wrap (bool): If ``True``, initializes the
+                FSDP optimizer before wrapping the model with FSDP; otherwise,
                 initializes the FSDP optimizer after wrapping the model with
                 FSDP. We permit both forms of initialization to give users
                 flexibility.
@@ -387,12 +383,12 @@ class TestFSDPUseOrigParamsMultipleParamGroups(FSDPTest):
             ddp_model, ddp_optim, fsdp_model, fsdp_optim, set_to_none
         )
 
-    """
-        Tests FSDP parity with DDP when using multiple parameter groups and
-        freezing the parameters in one parameter group.
-    """
     @skip_if_lt_x_gpu(2)
     def test_diff_trainability(self):
+        """
+        Tests FSDP parity with DDP when using multiple parameter groups and
+        freezing the parameters in one parameter group.
+        """
         self.run_subtests(
             {
                 "multi_tensor": [False, True],
@@ -660,7 +656,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
             optim_orig_params,
         ) = self._get_fsdp_models_and_optims(sharding_strategy, cpu_offload)
         device = torch.device("hpu", ht.hpu.current_device())
-        for _ in range(1):
+        for _ in range(3):
             inp1 = fsdp_model.get_input(device)
             _inp2 = fsdp_model.get_input(device)
             inp2 = tuple(
@@ -715,7 +711,7 @@ class TestFSDPUseOrigParamsUnshardReshard(FSDPTest):
             optim_orig_params,
         ) = self._get_fsdp_models_and_optims(sharding_strategy, cpu_offload)
         device=torch.device("hpu", ht.hpu.current_device())
-        for _ in range(1):
+        for _ in range(3):
             optim.zero_grad()
             optim_orig_params.zero_grad()
 

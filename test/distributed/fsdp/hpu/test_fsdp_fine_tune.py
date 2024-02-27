@@ -38,7 +38,7 @@ class TestFSDPFineTune(FSDPTest):
 
     @property
     def world_size(self) -> int:
-        return min(torch.cuda.device_count(), 2)
+        return min(ht.hpu.device_count(), 2)
 
     def _init_seq_module(self) -> nn.Module:
         torch.manual_seed(42)
@@ -162,9 +162,9 @@ class TestFSDPFineTune(FSDPTest):
         class TestModule(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.layer_0 = nn.Linear(5, 5, device="cuda")
-                self.layer_no_grad = nn.Linear(5, 5, device="cuda")
-                self.layer_with_grad = nn.Linear(5, 5, device="cuda")
+                self.layer_0 = nn.Linear(5, 5, device="hpu")
+                self.layer_no_grad = nn.Linear(5, 5, device="hpu")
+                self.layer_with_grad = nn.Linear(5, 5, device="hpu")
                 self.layer_no_grad.requires_grad_(False)
 
             def forward(self, x):
@@ -224,7 +224,7 @@ class TestFSDPFineTune(FSDPTest):
         torch.manual_seed(self.rank + 1)
         losses = []
         for _ in range(6):
-            inp = torch.randn((8, 5), device="cuda", requires_grad=inp_requires_grad)
+            inp = torch.randn((8, 5), device="hpu", requires_grad=inp_requires_grad)
             for seq, optim in ((fsdp_seq, fsdp_optim), (ddp_seq, ddp_optim)):
                 loss = seq(inp).sum()
                 losses.append(loss)
@@ -233,6 +233,7 @@ class TestFSDPFineTune(FSDPTest):
                 optim.zero_grad()
             torch.testing.assert_close(losses[0], losses[1])
             losses.clear()
+
     @skip_if_lt_x_gpu(2)
     def test_parity_with_ddp(self):
         """
