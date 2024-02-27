@@ -98,7 +98,7 @@ class Model(Module):
         register_buffers=False,
         ignore_inner=False,
         mixed_precision=False,
-	process_group=None,
+        process_group=None,
     ):
         super().__init__()
         self.inner = Linear(*INNER_SHAPE)
@@ -119,7 +119,7 @@ class Model(Module):
                 )
                 if mixed_precision
                 else None,
-		process_group=process_group,
+             process_group=process_group,
              device_id=device_hpu
             )
         self.outer = Linear(*OUTER_SHAPE)
@@ -149,7 +149,24 @@ class TestDummyModel(torch.nn.Module):
         return self.net3(self.net2(self.net1(x)))
 
     def get_input(self):
-        return torch.rand(8, 8, device="cuda")
+        return torch.rand(8, 8, device="hpu")
+
+
+class TestDummyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.net1 = nn.Sequential(nn.Linear(8, 16), nn.ReLU())
+        self.net2 = nn.Sequential(nn.Linear(16, 16), nn.ReLU())
+        self.net3 = self.net2
+        self.random_parameter = nn.Parameter(torch.Tensor(10))
+        self.shared_parameter = self.random_parameter
+
+    def forward(self, x):
+        return self.net3(self.net2(self.net1(x)))
+
+    def get_input(self):
+        return torch.rand(8, 8, device="hpu")
 
 
 class TestFSDPStateDict(FSDPTest):
@@ -1257,20 +1274,22 @@ class TestFSDPStateDict(FSDPTest):
 class TestFSDPStateDict4GPUs(FSDPTest):
     @property
     def world_size(self):
-        return max(torch.cuda.device_count(), 2)
+        return max(ht.hpu.device_count(), 2)
 
     @skip_if_lt_x_gpu(4)
     def test_local_state_dict_reshard(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         """
         This test demonstrates the ability to do resharding when using
         local_state_dict. Although we do not recommend users to use
         local_state_dict, there are still some corner cases that
         using local_state_dict is a better solution.
         """
-        model = FSDP(Model(wrap_fsdp=True)).cuda()
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        model = FSDP(Model(wrap_fsdp=True), device_id=device_hpu).to(device_hpu)
         optim = torch.optim.SGD(model.parameters(), lr=0.1)
 
-        batch = torch.randn(4, 4, device=torch.cuda.current_device())
+        batch = torch.randn(4, 4, device=device_hpu)
         output = model(batch)
         loss = output.sum()
         loss.backward()
@@ -1303,8 +1322,8 @@ class TestFSDPStateDict4GPUs(FSDPTest):
 
         if rank < 2:
             model2 = FSDP(
-                Model(wrap_fsdp=True, process_group=new_pg), process_group=new_pg
-            ).cuda()
+                Model(wrap_fsdp=True, process_group=new_pg), process_group=new_pg, device_id=device_hpu,
+            ).to(device_hpu)
             with FSDP.state_dict_type(model2, StateDictType.LOCAL_STATE_DICT):
                 model2.load_state_dict(resharded_state_dict)
 

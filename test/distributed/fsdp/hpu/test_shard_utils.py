@@ -1,6 +1,7 @@
 # Owner(s): ["oncall: distributed"]
 
 import torch
+import pytest
 
 from torch.distributed.distributed_c10d import _get_default_group
 from torch.distributed.fsdp._shard_utils import (
@@ -54,8 +55,9 @@ class TestShardUtilsDistributedDTensor(DTensorTestBase):
     def _create_tensor(self, *size):
         # Keep everything deterministic.
         torch.manual_seed(0)
-        return torch.rand(*size).cuda()
+        return torch.rand(*size).to(device_hpu)
 
+    @pytest.mark.skip("not supported configuration")
     @with_comms
     @skip_if_lt_x_gpu(2)
     def test_create_chunk_dtensor(self):

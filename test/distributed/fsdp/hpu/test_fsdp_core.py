@@ -244,6 +244,7 @@ class TestParityWithDDP(FSDPTest):
         )
 
     @skip_if_lt_x_gpu(2)
+    @pytest.mark.skip("HW Sleep not supported")
     @parametrize(params, configs, subtest_name)
     def test_mixture_of_experts_with_delay_before_free(
         self,

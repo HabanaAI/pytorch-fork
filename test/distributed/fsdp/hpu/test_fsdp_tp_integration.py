@@ -1,4 +1,5 @@
 # Owner(s): ["oncall: distributed"]
+import pytest
 import copy
 import sys
 from collections import OrderedDict
@@ -12,7 +13,6 @@ from torch.distributed._tensor import DeviceMesh, DTensor as DT, init_device_mes
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     CPUOffload,
     FullyShardedDataParallel as FSDP,
-    StateDictType,
 )
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
@@ -109,13 +109,14 @@ class TestTPFSDPIntegration(FSDPTest):
             device_type="hpu",
             mesh=torch.arange(0, self.world_size).view(-1, tensor_parallel_size),
         )
+
         fsdp_pg = twod_mesh.get_group(mesh_dim=0)
         tp_pg = twod_mesh.get_group(mesh_dim=1)
         return twod_mesh, fsdp_pg, tp_pg
 
     def _get_chunk_sharding_spec(self, tp_world_size: int, tp_pg: dist.ProcessGroup):
         placements = [
-            f"rank:{idx}/cuda:{dist.distributed_c10d.get_global_rank(tp_pg, idx) % torch.cuda.device_count()}"
+            f"rank:{idx}/cuda:{dist.distributed_c10d.get_global_rank(tp_pg, idx) % ht.hpu.device_count()}"
             for idx in range(tp_world_size)
         ]
         # Rowwise and colwise sharding are specified with respect to the
@@ -158,7 +159,7 @@ class TestTPFSDPIntegration(FSDPTest):
         unsharded_mask = torch.cat(per_param_masks).contiguous().type(torch.BoolTensor)
         sharded_mask = unsharded_mask.chunk(fsdp_world_size)[self.rank // tp_world_size]
         grad_device = flat_param.grad.device
-        grad = flat_param.grad.detach().clone().cuda(self.rank)
+        grad = flat_param.grad.detach().clone().to(device_hpu)
         dist.all_reduce(grad, op=dist.ReduceOp.SUM, group=tp_pg)
         grad = grad.to(grad_device)
         flat_param.grad[~sharded_mask] = grad[~sharded_mask]
@@ -211,6 +212,7 @@ class TestTPFSDPIntegration(FSDPTest):
                 ).reshape(-1)
         return torch.cat(all_grads_per_param).contiguous()
 
+    @pytest.mark.skip("not supported configuration mesh")
     @skip_if_lt_x_gpu(4)
     @parametrize("tensor_parallel_size", [2, 4])
     @parametrize(
@@ -242,14 +244,20 @@ class TestTPFSDPIntegration(FSDPTest):
         inp_size = [2, 3, 5]
         inp = torch.rand(*inp_size).to(device_hpu)
         self.assertEqual(model(inp), tp_fsdp_model(inp))  # sanity check
-        mesh_1d = init_device_mesh("cuda", (self.world_size,))
+        mesh_1d = init_device_mesh("hpu", (self.world_size,))
         fsdp_model = FSDP(model, cpu_offload=cpu_offload, device_mesh=mesh_1d)
         mesh_2d = init_device_mesh(
             "cuda",
             (self.world_size // tensor_parallel_size, tensor_parallel_size),
             mesh_dim_names=["dp", "tp"],
+        )
 
-            device_id=device_hpu
+        mesh_1d = init_device_mesh("hpu", (self.world_size,))
+        fsdp_model = FSDP(model, cpu_offload=cpu_offload, device_mesh=mesh_1d)
+        mesh_2d = init_device_mesh(
+            "hpu",
+            (self.world_size // tensor_parallel_size, tensor_parallel_size),
+            mesh_dim_names=["dp", "tp"],
         )
 	
         # Shard with TP and then wrap with FSDP
@@ -258,7 +266,7 @@ class TestTPFSDPIntegration(FSDPTest):
             "net2": RowwiseParallel(output_layouts=Shard(0)),
         }
         tp_fsdp_model = parallelize_module(
-	    tp_fsdp_model,
+            tp_fsdp_model,
             mesh_2d["tp"],
             sequence_parallelize_plan,
         )
@@ -266,7 +274,7 @@ class TestTPFSDPIntegration(FSDPTest):
         assert isinstance(tp_fsdp_model.net1.weight, DT)
         assert isinstance(tp_fsdp_model.net2.weight, DT)
         tp_fsdp_model = FSDP(
-	    tp_fsdp_model,
+            tp_fsdp_model,
             cpu_offload=cpu_offload,
             device_mesh=mesh_2d["dp"],
             device_id=device_hpu
@@ -317,7 +325,6 @@ class TestTPFSDPIntegration(FSDPTest):
         fsdp_out = fsdp_model(inp)
         tp_fsdp_out = tp_fsdp_model(inp)
         self.assertEqual(fsdp_out, tp_fsdp_out)
-
 
 
 instantiate_parametrized_tests(TestTPFSDPIntegration)
