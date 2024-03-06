@@ -763,17 +763,14 @@ class MixtureOfExperts(NestedWrappedModule):
         shared = _maybe_cuda(nn.Linear(d_shared, d_expert), self.move_to_cuda)
 
         if wrap_fsdp:
-            # we create a process group of size 1 for the expert params
-            expert_group = torch.distributed.new_group(
-                [group.rank()]
-            )  # world size 1 means no shard
-            expert = FSDP(expert, expert_group, **fsdp_kwargs)  # type: ignore[assignment]
+            # wrap with fsdp
+            expert = FSDP(expert, group, **fsdp_kwargs)  # type: ignore[assignment]
             shared = FSDP(shared, group, **fsdp_kwargs)  # type: ignore[assignment]
 
         self.module = nn.Sequential(
             _maybe_cuda(nn.Linear(d_input, d_shared), self.move_to_cuda),
             shared,
-            expert,
+            _maybe_cuda(nn.Linear(d_expert, d_shared), self.move_to_cuda),
             _maybe_cuda(nn.Linear(d_shared, d_input), self.move_to_cuda),
         )
 
@@ -784,6 +781,7 @@ class MixtureOfExperts(NestedWrappedModule):
                 orig_reshard = torch.distributed.fsdp._runtime_utils._reshard
 
                 def _delayed_reshard(*args, **kwargs):
+                    # This needs a HW sleep api.
                     if ht.hpu.is_available():
                         time.sleep(self.delay_before_free_ms / 1000)
                     else:
@@ -1126,7 +1124,7 @@ class FSDPTest(MultiProcessTestCase):
 
     @property
     def world_size(self):
-        return min(torch.cuda.device_count(), 8) if torch.cuda.is_available() else 4
+        return ht.hpu.device_count() if ht.hpu.is_available() else 4
 
     @property
     def process_group(self):
