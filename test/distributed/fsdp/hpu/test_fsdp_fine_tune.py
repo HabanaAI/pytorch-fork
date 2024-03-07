@@ -211,14 +211,17 @@ class TestFSDPFineTune(FSDPTest):
     ):
         seq = self._init_multi_traversal_module()
         policy = ModuleWrapPolicy({nn.Linear})
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
+        fsdp_kwargs = {"device_id": device_hpu}
         fsdp_seq = FSDP(
             copy.deepcopy(seq),
             auto_wrap_policy=policy,
             sharding_strategy=sharding_strategy,
             use_orig_params=use_orig_params,
             forward_prefetch=forward_prefetch,
+            **fsdp_kwargs
         )
-        ddp_seq = DDP(copy.deepcopy(seq), device_ids=[self.rank])
+        ddp_seq = DDP(copy.deepcopy(seq), device_ids=[device_hpu])
         fsdp_optim = torch.optim.Adam(fsdp_seq.parameters(), lr=1e-2)
         ddp_optim = torch.optim.Adam(ddp_seq.parameters(), lr=1e-2)
         torch.manual_seed(self.rank + 1)
