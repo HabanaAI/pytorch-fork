@@ -374,6 +374,7 @@ class TestFSDPMixedPrecision(FSDPTest):
             "mixed_precision": mp,
             "cpu_offload": CPUOffload(offload_params=offload_params),
             "use_orig_params": use_orig_params,
+            "device_id": device_hpu,
         }
         m.lin1 = FSDP(m.lin1, **fsdp_kwargs)
         m = FSDP(m, **fsdp_kwargs)
@@ -606,7 +607,7 @@ class TestFSDPMixedPrecisionSharded(TestFSDPMixedPrecision):
                 CUDAInitMode.CUDA_BEFORE,
                 {"mixed_precision": mp_config},
             )
-            fsdp_model = FSDP(model, mixed_precision=mp_config)
+            fsdp_model = FSDP(model, mixed_precision=mp_config, device_id=device_hpu)
             optim = torch.optim.SGD(fsdp_model.parameters(), lr=0.1)
             for _ in range(6):
                 inp = fsdp_model.module.get_input(torch.device("hpu"))
@@ -681,6 +682,7 @@ class TestFSDPMixedPrecisionSharded(TestFSDPMixedPrecision):
             resnet_model,
             auto_wrap_policy=size_based_auto_wrap_policy,
             mixed_precision=mp_config,
+            device_id=device_hpu,
         )
         # Batchnorm units should be wrapped individually. Validate this by
         # ensuring there are equal no. of FSDP units that are BN as BN units
@@ -753,6 +755,7 @@ class TestFSDPMixedPrecisionSharded(TestFSDPMixedPrecision):
                 net,
                 mixed_precision=mp_config,
                 auto_wrap_policy=never_wrap_policy,
+                device_id=device_hpu,
             )
 
         no_mp = MixedPrecision()
@@ -1127,6 +1130,7 @@ class TestFSDPMixedPrecisionIgnoredModules(FSDPTest):
             model,
             ignored_modules=[model.ignored],
             mixed_precision=float16,
+            device_id=device_hpu,
         )
 
         x = torch.ones(2, 100, device=device_hpu)
@@ -1153,8 +1157,8 @@ class TestFSDPDifferentSubmodulePrecision(FSDPTest):
         x = torch.zeros(2, 100, device="hpu")
 
         # float16 on one submodule and float32 on everything else
-        model.c2 = FSDP(model.c2, mixed_precision=float16)
-        fsdp = FSDP(model)
+        model.c2 = FSDP(model.c2, mixed_precision=float16, device_id=device_hpu)
+        fsdp = FSDP(model, device_id=device_hpu)
 
         fsdp(x).sum().backward()
 
@@ -1174,8 +1178,8 @@ class TestFSDPDifferentSubmodulePrecision(FSDPTest):
         x = torch.zeros(2, 100, device="hpu")
 
         # float16 on one submodule and float32 on everything else
-        model.c2 = FSDP(model.c2, mixed_precision=float16)
-        fsdp = FSDP(model)
+        model.c2 = FSDP(model.c2, mixed_precision=float16, device_id=device_hpu)
+        fsdp = FSDP(model, device_id=device_hpu)
 
         fsdp(x).sum().backward()
 
@@ -1195,7 +1199,7 @@ class TestFSDPDifferentSubmodulePrecision(FSDPTest):
         x = torch.zeros(2, 100, device="hpu")
 
         # float16 on one submodule and float32 on everything else
-        model.c2 = FSDP(model.c2, mixed_precision=float16)
+        model.c2 = FSDP(model.c2, mixed_precision=float16, device_id=device_hpu)
         fsdp = FSDP(model)
 
         with self.assertRaisesRegex(
@@ -1278,8 +1282,8 @@ class TestFSDPDifferentSubmodulePrecision(FSDPTest):
         float16 = MixedPrecision(param_dtype=torch.float16)
         model = ToyModel(forward_inputs).to(device_hpu)
         x = torch.zeros(2, 100, device="hpu", dtype=torch.float32)
-        model.l2 = FSDP(model.l2, mixed_precision=float16)
-        fsdp = FSDP(model, mixed_precision=float16)
+        model.l2 = FSDP(model.l2, mixed_precision=float16, device_id=device_hpu)
+        fsdp = FSDP(model, mixed_precision=float16, device_id=device_hpu)
 
         fsdp(x).sum().backward()
 
