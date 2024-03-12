@@ -77,8 +77,10 @@ subtest_name = functools.partial(subtest_name, test_name_mapping)
 
 class TestShardGradScaler(TestCase):
     @unittest.skipIf(
-        (amp_definitely_not_available() and (not ht.hpu.is_available())), "no supported device (cuda, xla, hpu) found"
+        amp_definitely_not_available(), "no supported device (cuda, xla) found"
     )
+    # This test case is not support for hpu because of torch.cuda.amp.GradScaler internally
+    # enable only for cuda
     def test_grad_scaling(self):
         pg = DummyProcessGroup(0, 1)
         scaler = ShardedGradScaler(init_scale=2.0, process_group=pg, enabled=True)
@@ -250,8 +252,10 @@ class TestShardedGradScalerParityWithDDP(FSDPTest):
         )
 
     @unittest.skipIf(
-        (amp_definitely_not_available() and (not ht.hpu.is_available())), "no supported device (cuda, xla, hpu) found"
+        (amp_definitely_not_available()), "no supported device (cuda, xla) found"
     )
+    # This test case is not support for hpu because of torch.cuda.amp.GradScaler internally
+    # enable only for cuda
     def _test_sharded_grad_scaler_found_inf(
         self,
         use_orig_params: bool,
