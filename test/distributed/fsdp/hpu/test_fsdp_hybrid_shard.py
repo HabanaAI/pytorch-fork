@@ -38,7 +38,6 @@ from torch.testing._internal.common_utils import (
 )
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -107,6 +106,7 @@ class TestFSDPHybridShard(FSDPTest):
 
     @skip_if_lt_x_gpu(2)
     def test_raises_manual_wrap_hybrid_shard_when_none_policy(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = MyModel().to(device_hpu)
         err_ctx = self.assertRaisesRegex(
             ValueError,
@@ -114,26 +114,37 @@ class TestFSDPHybridShard(FSDPTest):
         )
 
         with err_ctx:
-            model = FSDP(model, sharding_strategy=ShardingStrategy.HYBRID_SHARD)
+            model = FSDP(
+                model,
+                sharding_strategy=ShardingStrategy.HYBRID_SHARD,
+                device_id=device_hpu
+            )
 
         with err_ctx:
-            model = FSDP(model, sharding_strategy=ShardingStrategy._HYBRID_SHARD_ZERO2)
+            model = FSDP(
+                model,
+                sharding_strategy=ShardingStrategy._HYBRID_SHARD_ZERO2,
+                device_id=device_hpu
+            )
 
     @skip_if_lt_x_gpu(2)
     def test_hybrid_shard_pg_mismatch_raises(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = MyModel().to(device_hpu)
         intra_pg = self.process_group
-        inter_pg = dist.new_group(ranks=[self.rank])
+        inter_pg = dist.new_group()
         # Mismatched process groups for intra-node
         model.lin1 = FSDP(
             model.lin1,
             process_group=(intra_pg, inter_pg),
             sharding_strategy=ShardingStrategy.HYBRID_SHARD,
+            device_id=device_hpu,
         )
         model = FSDP(
             model,
             process_group=(dist.new_group(), dist.new_group()),
             sharding_strategy=ShardingStrategy.HYBRID_SHARD,
+            device_id=device_hpu,
         )
         # Errors during _lazy_init
         inp = torch.randn(4, 10)
@@ -148,11 +159,13 @@ class TestFSDPHybridShard(FSDPTest):
             model.lin1,
             process_group=(intra_pg, inter_pg),
             sharding_strategy=ShardingStrategy.HYBRID_SHARD,
+            device_id=device_hpu,
         )
         model = FSDP(
             model,
             process_group=(intra_pg, dist.new_group()),
             sharding_strategy=ShardingStrategy.HYBRID_SHARD,
+            device_id=device_hpu,
         )
         with self.assertRaisesRegex(
             ValueError, "inter-node process groups do not match"
@@ -161,8 +174,9 @@ class TestFSDPHybridShard(FSDPTest):
 
     @skip_if_lt_x_gpu(4)
     def test_hsdp_save_load_state_dict(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = MyModel().to(device_hpu)
-        num_node_devices = 2# Need only 2 devices for this test
+        num_node_devices = ht.hpu.device_count()
         shard_rank_lists = list(range(0, num_node_devices // 2)), list(
             range(num_node_devices // 2, num_node_devices)
         )
@@ -208,50 +222,10 @@ class TestFSDPHybridShard(FSDPTest):
             load_model.load_state_dict(msd)
             FSDP.optim_state_dict_to_load(load_model, load_optim, osd)
         load_optim.load_state_dict(osd)
-    @skip_if_lt_x_gpu(4)
-    def test_hsdp_sync_module_state(self):
-        model = MyModel().to(device_hpu)
-        num_node_devices = ht.hpu.device_count()
-        shard_rank_lists = list(range(0, num_node_devices // 2)), list(
-            range(num_node_devices // 2, num_node_devices)
-        )
-        shard_groups = (
-            dist.new_group(shard_rank_lists[0]),
-            dist.new_group(shard_rank_lists[1]),
-        )
-        my_shard_group = (
-            shard_groups[0] if self.rank in shard_rank_lists[0] else shard_groups[1]
-        )
-        my_replicate_group = None
-        my_rank = self.rank
-        # Create groups like (0, 4), (1, 5), (2, 6) etc and assign appropriately
-        shard_factor = len(shard_rank_lists[0])
-        for i in range(num_node_devices // 2):
-            replicate_group_ranks = list(range(i, num_node_devices, shard_factor))
-            replicate_group = dist.new_group(replicate_group_ranks)
-            if my_rank in replicate_group_ranks:
-                my_replicate_group = replicate_group
-
-        nn.init.constant_(model.lin1.weight, self.rank)
-        nn.init.constant_(model.lin2.weight, self.rank)
-        nn.init.constant_(model.lin3.weight, self.rank)
-
-        fsdp_ctor = partial(
-            FSDP,
-            sharding_strategy=ShardingStrategy.HYBRID_SHARD,
-            use_orig_params=True,
-            sync_module_states=True,
-            process_group=(my_shard_group, my_replicate_group),
-        )
-        model = fsdp_ctor(model)
-
-        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT):
-            self.assertTrue((model.lin1.weight == 0).all())
-            self.assertTrue((model.lin2.weight == 0).all())
-            self.assertTrue((model.lin3.weight == 0).all())
 
     @skip_if_lt_x_gpu(4)
     def test_hsdp_sync_module_state(self):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = MyModel().to(device_hpu)
         num_node_devices = ht.hpu.device_count()
         shard_rank_lists = list(range(0, num_node_devices // 2)), list(
@@ -295,6 +269,7 @@ class TestFSDPHybridShard(FSDPTest):
     @skip_if_lt_x_gpu(2)
     def test_invalid_pg_specification_raises(self):
         pol = ModuleWrapPolicy({nn.Linear})
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         model = MyModel().to(device_hpu)
         with self.assertRaisesRegex(
             ValueError, "Expected process_group to be passed in"
@@ -304,6 +279,7 @@ class TestFSDPHybridShard(FSDPTest):
                 auto_wrap_policy=pol,
                 process_group=self.process_group,
                 sharding_strategy=ShardingStrategy.HYBRID_SHARD,
+                device_id=device_hpu,
             )
 
     # TODO - add test for ZeRO-2 style sharding ensure params are not
@@ -338,8 +314,13 @@ class TestFSDPHybridShard(FSDPTest):
         sharding_strategy_mode: ShardingStrategyMode,
         use_orig_params: bool,
     ):
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
         hsdp_model = self._init_hsdp_model(
-            hsdp_sharding_strategy, sharding_strategy_mode, use_orig_params, self.process_group
+            hsdp_sharding_strategy,
+            sharding_strategy_mode,
+            use_orig_params,
+            hsdp_process_groups=(self.process_group, self.process_group),
+            device=device_hpu
         )
         # All FSDP modules should have state.process_group as the process group over which to
         # shard (default process group), and state._inter_node_pg (process group containing only
@@ -367,7 +348,7 @@ class TestFSDPHybridShard(FSDPTest):
             intra_node_pgs.add(fsdp_module.process_group)
             inter_node_pg = fsdp_module._inter_node_pg
             inter_node_pgs.add(inter_node_pg)
-            self.assertEqual(2, dist.get_world_size(inter_node_pg))
+            self.assertEqual(8, dist.get_world_size(inter_node_pg))
             self.assertFalse(_rank_not_in_group(inter_node_pg))
             self.assertEqual(hsdp_sharding_strategy, fsdp_module.sharding_strategy)
         # All fsdp modules should share the same process groups
@@ -420,7 +401,8 @@ class TestFSDPHybridShard(FSDPTest):
     def _test_fsdp_hybrid_shard_parity(
         self, hsdp_sharding_strategy: ShardingStrategy, use_orig_params: bool
     ):
-        fsdp_model = self._init_fsdp_model(use_orig_params)
+        device_hpu = torch.device("hpu", ht.hpu.current_device())
+        fsdp_model = self._init_fsdp_model(use_orig_params, device=device_hpu)
         global_pg = dist.distributed_c10d._get_default_group()
         hsdp_pgs = _init_intra_and_inter_node_groups(global_pg, 2)
         hsdp_model = self._init_hsdp_model(
@@ -446,13 +428,13 @@ class TestFSDPHybridShard(FSDPTest):
                 optim.step()
             self.assertEqual(losses[0], losses[1])
 
-    def _init_fsdp_model(self, use_orig_params: bool) -> nn.Module:
+    def _init_fsdp_model(self, use_orig_params: bool, device: None) -> nn.Module:
         auto_wrap_policy = ModuleWrapPolicy(
             {TransformerEncoderLayer, TransformerDecoderLayer},
         )
         hsdp_kwargs = {
             "auto_wrap_policy": auto_wrap_policy,
-            "device_id": device_hpu,
+            "device_id": device,
             "use_orig_params": use_orig_params,
         }
         fsdp_model = TransformerWithSharedParams.init(
@@ -472,20 +454,20 @@ class TestFSDPHybridShard(FSDPTest):
         hsdp_process_groups: Optional[
             Tuple[dist.ProcessGroup, dist.ProcessGroup]
         ] = None,
+        device = None,
     ):
         auto_wrap_policy = ModuleWrapPolicy(
             {TransformerEncoderLayer, TransformerDecoderLayer},
         )
         hsdp_kwargs = {
-            "device_id": device_hpu,
+            "device_id": device,
             "auto_wrap_policy": auto_wrap_policy,
             "sharding_strategy": hsdp_sharding_strategy,
             "use_orig_params": use_orig_params,
         }
-        process_groups = (self.process_group,  hsdp_process_groups)
         if sharding_strategy_mode == ShardingStrategyMode.ALL_HYBRID_SHARD:
             hsdp_model = TransformerWithSharedParams.init(
-                process_groups,
+                hsdp_process_groups or self.process_group,
                 FSDPInitMode.RECURSIVE,
                 CUDAInitMode.CUDA_BEFORE,
                 hsdp_kwargs,
@@ -493,18 +475,18 @@ class TestFSDPHybridShard(FSDPTest):
             )
         elif sharding_strategy_mode == ShardingStrategyMode.MIXED_HYBRID_FULL_SHARD:
             model = TransformerWithSharedParams.init(
-                process_groups,
+                hsdp_process_groups or self.process_group,
                 FSDPInitMode.NO_FSDP,
                 CUDAInitMode.CUDA_BEFORE,
                 {},
                 deterministic=True,
             )
             # Use the HSDP strategy for the transformer module
-            model.transformer = FSDP(model.transformer, process_groups, **hsdp_kwargs)
+            model.transformer = FSDP(model.transformer, hsdp_process_groups, **hsdp_kwargs)
             # Use `FULL_SHARD` for the embedding and output projection
             hsdp_model = FSDP(
                 model,
-                device_id=device_hpu,
+                device_id=device,
                 sharding_strategy=ShardingStrategy.FULL_SHARD,
                 use_orig_params=use_orig_params,
             )
