@@ -890,6 +890,9 @@ class TestFSDPMiscMultiThread(FSDPTestMultiThread):
             self.assertEqual(torch.device("cpu"), t.device)
 
     @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(
+        (ht.hpu.is_available()), "multi hpu device is not supported"
+    )
     def test_multigpu_module(self):
         """
         Module on multiple GPUs wrapped in FSDP should raise an error.
