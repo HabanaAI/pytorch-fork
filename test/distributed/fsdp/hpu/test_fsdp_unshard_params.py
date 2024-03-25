@@ -560,7 +560,7 @@ class TestUnshardParams(TestUnshardParamsBase):
             CUDAInitMode.CUDA_BEFORE,
             deterministic=True,
         )
-        ddp_model = DDP(model, device_ids=[self.rank])
+        ddp_model = DDP(model, device_ids=[device_hpu])
         fsdp_model = TransformerWithSharedParams.init(
             self.process_group,
             FSDPInitMode.RECURSIVE,
