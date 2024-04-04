@@ -1123,6 +1123,8 @@ class TestFSDPMixedPrecisionIgnoredModules(FSDPTest):
         return 1
 
     @skip_if_lt_x_gpu(1)
+    @unittest.skipIf(ht.hpu.is_available(),
+                     "Runtime not report due to internal type casting on HPU")
     def test_mixed_precision_with_ignored_module(self):
         model = ModelWithIgnoredModule().to(device_hpu)
         float16 = MixedPrecision(param_dtype=torch.float16)
@@ -1188,6 +1190,8 @@ class TestFSDPDifferentSubmodulePrecision(FSDPTest):
         self.assertEqual(forward_inputs[c2].dtype, torch.float32)
 
     @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(ht.hpu.is_available(),
+                     "Runtime not report due to internal type casting on HPU")
     def test_float16_on_one_submodule_skip_inputs_error(self):
         forward_inputs: Dict[nn.Module, torch.Tensor] = {}
         float16 = MixedPrecision(param_dtype=torch.float16, cast_forward_inputs=False)
@@ -1208,6 +1212,8 @@ class TestFSDPDifferentSubmodulePrecision(FSDPTest):
             fsdp(x).sum().backward()
 
     @skip_if_lt_x_gpu(2)
+    @unittest.skipIf(ht.hpu.is_available(),
+                     "Runtime not report due to internal type casting on HPU")
     def test_submodules_with_different_precisions_error(self):
         forward_inputs: Dict[nn.Module, torch.Tensor] = {}
         float16 = MixedPrecision(param_dtype=torch.float16, cast_forward_inputs=True)
