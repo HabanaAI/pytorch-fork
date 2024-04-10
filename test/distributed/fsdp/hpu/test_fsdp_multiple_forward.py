@@ -13,7 +13,6 @@ from torch.testing._internal.common_fsdp import FSDPTest, get_full_params
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -34,6 +33,7 @@ class Model(Module):
         torch.manual_seed(0)
         self.inner = Linear(4, 4)
         if wrap_fsdp:
+            device_hpu=torch.device("hpu", ht.hpu.current_device())
             self.inner = FSDP(self.inner, device_id=device_hpu)
         self.outer = Linear(4, 5)
 
@@ -49,6 +49,7 @@ class TestMultiForward(FSDPTest):
         # keep everything deterministic for input data
         torch.manual_seed(0)
 
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         model = Model(wrap_fsdp).to(device_hpu)
         if wrap_fsdp:
             model = FSDP(model, device_id=device_hpu)
