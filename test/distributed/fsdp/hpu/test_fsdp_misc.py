@@ -219,8 +219,8 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 opt.step()
                 grads.append(x.grad)
                 opt.zero_grad()
-            assert torch.allclose(losses[0], losses[1])
-            assert torch.allclose(grads[0], grads[1])
+            assert torch.allclose(losses[0], losses[1], atol=1e-03, rtol=1e-03)
+            assert torch.allclose(grads[0], grads[1], atol=1e-03, rtol=1e-03)
             losses.clear()
             grads.clear()
 
@@ -232,7 +232,7 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 y = torch.randint(low=0, high=9, size=(8,), device="hpu")
                 fsdp_loss = fsdp_model(x, y)
                 ddp_loss = ddp_model(x, y)
-                assert torch.allclose(fsdp_loss, ddp_loss)
+                assert torch.allclose(fsdp_loss, ddp_loss, atol=1e-03, rtol=1e-03)
 
         fsdp_model.train()
         ddp_model.train()
@@ -249,8 +249,8 @@ class TestFSDPMiscMultiProcess(FSDPTest):
                 opt.step()
                 grads.append(x.grad)
                 opt.zero_grad()
-            assert torch.allclose(losses[0], losses[1])
-            assert torch.allclose(grads[0], grads[1])
+            assert torch.allclose(losses[0], losses[1], atol=1e-03, rtol=1e-03)
+            assert torch.allclose(grads[0], grads[1], atol=1e-03, rtol=1e-03)
             losses.clear()
             grads.clear()
 

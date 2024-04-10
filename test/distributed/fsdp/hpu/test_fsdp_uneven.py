@@ -12,7 +12,6 @@ from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -30,6 +29,7 @@ class TestUnevenParamShard(FSDPTest):
     def _get_ref_results(self, model, input, my_lr):
         with torch.no_grad():
             # Compute one iteration local output.
+            device_hpu=torch.device("hpu", ht.hpu.current_device())
             weight = model.weight.T.clone().to(device_hpu)
             v = torch.Tensor(input[self.rank]).to(device_hpu)
             ref_forward_output_my_rank = torch.matmul(v, weight)
@@ -47,6 +47,7 @@ class TestUnevenParamShard(FSDPTest):
         input = torch.rand(8, 3)
         my_lr = 0.1
 
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         ref_forward_output_my_rank, ref_weight_out = self._get_ref_results(
             model, input, my_lr
         )
