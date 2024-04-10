@@ -12,7 +12,6 @@ from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 
 import habana_frameworks.torch as ht
-device_hpu=torch.device("hpu", ht.hpu.current_device())
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -29,6 +28,7 @@ if TEST_WITH_DEV_DBG_ASAN:
 class InnerModel(Module):
     def __init__(self):
         super().__init__()
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         self.layers = Sequential(FSDP(Linear(5, 5), device_id=device_hpu))
 
     def forward(self, x):
@@ -43,6 +43,7 @@ class TestMultipleWrapping(FSDPTest):
         This is required in cases where later in a session, the model is wrapped again in FSDP but
         contains nested FSDP wrappers within the module.
         """
+        device_hpu=torch.device("hpu", ht.hpu.current_device())
         inner_model = InnerModel()
         model = FSDP(inner_model, device_id=device_hpu)
         optim = SGD(model.parameters(), lr=0.1)
