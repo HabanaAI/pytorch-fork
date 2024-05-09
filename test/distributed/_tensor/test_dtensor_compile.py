@@ -49,6 +49,7 @@ from torch.testing._internal.distributed.fake_pg import FakeStore
 from torch.utils._triton import has_triton
 from torch.utils.checkpoint import checkpoint
 
+import habana_frameworks.torch
 
 class SimpleModel(nn.Module):
     def __init__(self, device):
@@ -95,7 +96,7 @@ class TestDTensorCompile(torch._dynamo.test_case.TestCase):
 
     @property
     def device_type(self) -> str:
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        return "cuda" if torch.cuda.is_available() else "hpu" if torch.hpu.is_available() else "cpu"
 
     @property
     def world_size(self) -> int:
@@ -570,7 +571,7 @@ def forward(self, primals_1):
 
         model = FakeTransformer().to(self.device_type)
 
-        tp_mesh = init_device_mesh("cuda", (2,), mesh_dim_names=("tp",))
+        tp_mesh = init_device_mesh("hpu" if torch.hpu.is_available() else "cuda", (2,), mesh_dim_names=("tp",))
 
         # apply sequence parallel
         parallel_plan = {
@@ -681,7 +682,7 @@ class TestDTensorCompileE2E(DTensorTestBase):
 
         # 2-D mesh is [dp, tp]
         twod_mesh = init_device_mesh(
-            "cuda",
+            "hpu" if torch.hpu.is_available() else "cuda",
             (data_parallel_size, self.world_size // data_parallel_size),
             mesh_dim_names=["dp", "tp"],
         )
@@ -696,9 +697,12 @@ class TestDTensorCompileE2E(DTensorTestBase):
             "mlp_1.net2": RowwiseParallel(),
         }
         tp_model = parallelize_module(model, twod_mesh["tp"], parallelize_plan)
+        device_id = self.rank
+        if torch.hpu.is_available():
+            device_id = torch.device("hpu", torch.hpu.current_device())
         eager_2d = FSDP(
             tp_model,
-            device_id=self.rank,
+            device_id=device_id,
             use_orig_params=True,
             device_mesh=twod_mesh["dp"],
         )
@@ -710,7 +714,7 @@ class TestDTensorCompileE2E(DTensorTestBase):
         )
         fsdp_2d = FSDP(
             tp_model2,
-            device_id=self.rank,
+            device_id=device_id,
             use_orig_params=True,
             device_mesh=twod_mesh["dp"],
         )
@@ -733,7 +737,7 @@ class TestDTensorCompileE2E(DTensorTestBase):
 
         # 2-D mesh is [dp, tp]
         mesh_2d = init_device_mesh(
-            "cuda", mesh_shape=(dp_degree, tp_degree), mesh_dim_names=("dp", "tp")
+            "hpu" if torch.hpu.is_available() else "cuda", mesh_shape=(dp_degree, tp_degree), mesh_dim_names=("dp", "tp")
         )
 
         inp = torch.rand(20, 10, device=self.device_type)
@@ -777,7 +781,7 @@ class TestDTensorCompileE2E(DTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     def test_compile_dtensor_redistribute_backward(self):
-        mesh = DeviceMesh(device_type="cuda", mesh=torch.arange(self.world_size))
+        mesh = DeviceMesh(device_type="hpu" if torch.hpu.is_available() else "cuda", mesh=torch.arange(self.world_size))
 
         def fn(x, y):
             dt = DTensor.from_local(x.reshape(2, 4), mesh, [Shard(0)], run_check=False)

@@ -35,6 +35,21 @@ from torch.utils._pytree import tree_flatten, tree_unflatten, TreeSpec
 DEVICE_TYPE = (
     "cuda" if torch.cuda.is_available() and torch.cuda.device_count() > 1 else "cpu"
 )
+from torch.distributed._tensor.placement_types import Placement
+
+import habana_frameworks.torch
+
+DEVICE_TYPE = (
+    "cuda"
+    if torch.cuda.is_available() and torch.cuda.device_count() > 1
+    else "hpu"
+    if torch.hpu.is_available() and torch.hpu.device_count() > 1
+    else "cpu"
+)
+PG_BACKEND = (
+    "nccl" if DEVICE_TYPE == "cuda" else "hccl" if DEVICE_TYPE == "hpu" else "gloo"
+)
+
 
 NUM_DEVICES = 4
 
@@ -297,7 +312,7 @@ class DTensorTestBase(MultiProcessTestCase):
 
     @property
     def backend(self) -> str:
-        backend = "nccl" if self.device_type == "cuda" else "gloo"
+        backend = "nccl" if self.device_type == "cuda" else "hccl" if self.device_type == "hpu" else "gloo"
         return backend
 
     def build_device_mesh(self) -> DeviceMesh:
@@ -307,8 +322,12 @@ class DTensorTestBase(MultiProcessTestCase):
         if "nccl" in self.backend and torch.cuda.device_count() < self.world_size:
             sys.exit(TEST_SKIPS[f"multi-gpu-{self.world_size}"].exit_code)
 
-        if self.backend not in ["nccl", "gloo", "mpi", "cpu:gloo,cuda:nccl"]:
+        if self.backend not in ["nccl", "gloo", "mpi", "cpu:gloo,cuda:nccl", "hccl"]:
             raise RuntimeError(f"Backend {self.backend} not supported!")
+
+        if torch.hpu.is_available():
+            import habana_frameworks.torch.distributed.hccl as hccl
+            hccl.initialize_distributed_hpu(self.world_size, self.rank, self.rank)
 
         dist.init_process_group(
             backend=self.backend,
@@ -360,7 +379,8 @@ def with_comms(func: TestFunc) -> TestFunc:
         self, *args: Tuple[object], **kwargs: Dict[str, Any]  # type: ignore[misc]
     ) -> None:
         # if enough GPU we can use GPU, otherwise we fallback to CPU
-        if not torch.cuda.is_available() or torch.cuda.device_count() < self.world_size:
+        if (not torch.cuda.is_available() or torch.cuda.device_count() < self.world_size) and
+            (not torch.hpu.is_available() or torch.hpu.device_count() < self.world_size):
             self.device_type = "cpu"
         else:
             self.device_type = DEVICE_TYPE
