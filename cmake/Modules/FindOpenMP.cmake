@@ -256,7 +256,7 @@ function(_OPENMP_GET_FLAGS LANG FLAG_MODE OPENMP_FLAG_VAR OPENMP_LIB_NAMES_VAR)
 
     if (NOT OpenMP_libomp_LIBRARY)
       find_library(OpenMP_libomp_LIBRARY
-        NAMES omp gomp iomp5
+        NAMES gomp iomp5
         HINTS ${CMAKE_${LANG}_IMPLICIT_LINK_DIRECTORIES}
         DOC "libomp location for OpenMP"
       )
