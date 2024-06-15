@@ -737,7 +737,6 @@ class UserDefinedObjectVariable(UserDefinedVariable):
                 return variables.TorchCtxManagerClassVariable(
                     obj.__class__
                 ).call_function(tx, [var], kwargs)
-
             if self.source is None:
                 unimplemented(
                     "Sourceless UserDefinedObjectVariable method not supported"
