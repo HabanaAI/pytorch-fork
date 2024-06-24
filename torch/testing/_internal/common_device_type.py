@@ -15,7 +15,7 @@ import os
 import torch
 from torch.testing._internal.common_utils import TestCase, TEST_WITH_ROCM, TEST_MKL, \
     skipCUDANonDefaultStreamIf, TEST_WITH_ASAN, TEST_WITH_UBSAN, TEST_WITH_TSAN, \
-    IS_SANDCASTLE, IS_FBCODE, IS_REMOTE_GPU, IS_WINDOWS, TEST_MPS, TEST_XPU, \
+    IS_SANDCASTLE, IS_FBCODE, IS_REMOTE_GPU, IS_WINDOWS, TEST_MPS, TEST_XPU, TEST_HPU,\
     _TestParametrizer, compose_parametrize_fns, dtype_name, \
     TEST_WITH_MIOPEN_SUGGEST_NHWC, NATIVE_DEVICES, skipIfTorchDynamo, \
     get_tracked_input, clear_tracked_input, PRINT_REPRO_ON_FAILURE, \
@@ -590,6 +590,18 @@ class XPUTestBase(DeviceTypeTestBase):
     def _should_stop_test_suite(self):
         return False
 
+class HPUTestBase(DeviceTypeTestBase):
+    device_type = 'hpu'
+    primary_device: ClassVar[str]
+
+    @classmethod
+    def get_primary_device(cls):
+        return cls.primary_device
+
+    @classmethod
+    def setUpClass(cls):
+        cls.primary_device = 'hpu:0'
+
 class PrivateUse1TestBase(DeviceTypeTestBase):
     primary_device: ClassVar[str]
     device_mod = None
@@ -638,6 +650,8 @@ def get_device_type_test_bases():
         device_mod = getattr(torch, device_type, None)
         if hasattr(device_mod, "is_available") and device_mod.is_available():
             test_bases.append(PrivateUse1TestBase)
+        if TEST_HPU and HPUTestBase not in test_bases:
+            test_bases.append(HPUTestBase)
         # Disable MPS testing in generic device testing temporarily while we're
         # ramping up support.
         # elif torch.backends.mps.is_available():
@@ -1066,6 +1080,10 @@ class skipXLAIf(skipIf):
     def __init__(self, dep, reason):
         super().__init__(dep, reason, device_type='xla')
 
+class skipHPUIf(skipIf):
+    def __init__(self, dep, reason):
+        super().__init__(dep, reason, device_type='hpu')
+
 class skipPRIVATEUSE1If(skipIf):
 
     def __init__(self, dep, reason):
@@ -1209,6 +1227,21 @@ def onlyNativeDeviceTypes(fn):
 
     return only_fn
 
+# Only runs the test on the native device types and devices specified in the devices list
+def onlyNativeDeviceTypesAnd(devices=None):
+    def decorator(fn):
+        @wraps(fn)
+        def only_fn(self, *args, **kwargs):
+            if self.device_type not in NATIVE_DEVICES and self.device_type not in devices:
+                reason = f"onlyNativeDeviceTypesAnd {devices} : doesn't run on {self.device_type}"
+                raise unittest.SkipTest(reason)
+
+            return fn(self, *args, **kwargs)
+
+        return only_fn
+
+    return decorator
+
 # Specifies per-dtype precision overrides.
 # Ex.
 #
@@ -1323,6 +1356,11 @@ class dtypesIfMPS(dtypes):
     def __init__(self, *args):
         super().__init__(*args, device_type='mps')
 
+class dtypesIfHPU(dtypes):
+
+    def __init__(self, *args):
+        super().__init__(*args, device_type='hpu')
+
 class dtypesIfPRIVATEUSE1(dtypes):
 
     def __init__(self, *args):
@@ -1342,6 +1380,9 @@ def onlyMPS(fn):
 
 def onlyXPU(fn):
     return onlyOn('xpu')(fn)
+    
+def onlyHpu(fn):
+    return onlyOn('hpu')(fn)
 
 def onlyPRIVATEUSE1(fn):
     device_type = torch._C._get_privateuse1_backend_name()
@@ -1577,6 +1618,10 @@ def skipXLA(fn):
 
 def skipMPS(fn):
     return skipMPSIf(True, "test doesn't work on MPS backend")(fn)
+
+def skipHPU(fn):
+    return skipHPUIf(True, "test doesn't work on MPS backend")(fn)
+
 
 def skipPRIVATEUSE1(fn):
     return skipPRIVATEUSE1If(True, "test doesn't work on privateuse1 backend")(fn)
