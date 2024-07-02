@@ -150,6 +150,14 @@ class UserDefinedClassVariable(UserDefinedVariable):
 
         return set(tensortype_to_dtype.keys()) | _in_graph_class_list
 
+        if hasattr(torch, "hpu"):
+            _in_graph_class_list.update({
+                torch.hpu.Stream,
+                torch.hpu.Event,
+            })
+
+        return set(tensortype_to_dtype.keys()) | _in_graph_class_list
+
     def can_constant_fold_through(self):
         return self.value in self._constant_fold_classes()
 
