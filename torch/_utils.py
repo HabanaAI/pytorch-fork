@@ -141,6 +141,33 @@ def _get_restore_location(device):
             )
 
 
+def _get_restore_location_with_callable(data, dtype, device):
+    """Return the map_location location.
+
+    Used for rebuild functions where the tensor device is distinct from the storage
+    """
+
+    map_location = getattr(_thread_local_state, "map_location", None)
+    if map_location is None:
+        tensor = torch.from_numpy(data).to(dtype=dtype, device=device)
+    else:
+        if isinstance(map_location, dict):
+            device = map_location.get(device, device)
+            tensor = torch.from_numpy(data).to(dtype=dtype, device=device)
+        elif isinstance(map_location, (str, torch.device)):
+            tensor = torch.from_numpy(data).to(dtype=dtype, device=map_location)
+        elif isinstance(map_location, Callable):
+            tensor = torch.from_numpy(data).to(dtype=dtype)
+            out = map_location(tensor, device)
+            if out is not None:
+                tensor = out
+            else:
+                tensor = tensor.to(device)
+        else:
+            raise NotImplementedError(f"Mapper map location not supported {_Mapper.map_location}")
+    return tensor
+
+
 # Note [Don't serialize hooks]
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Since time immemorial, we have serialized the backward hooks associated with
@@ -349,8 +376,7 @@ def _rebuild_device_tensor_from_cpu_tensor(data, dtype, device, requires_grad):
 
 
 def _rebuild_device_tensor_from_numpy(data, dtype, device, requires_grad):
-    device = _get_restore_location(device)
-    tensor = torch.from_numpy(data).to(dtype=dtype, device=device)
+    tensor = _get_restore_location_with_callable(data, dtype, device)
     tensor.requires_grad = requires_grad
     return tensor
 
