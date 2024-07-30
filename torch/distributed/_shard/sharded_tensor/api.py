@@ -17,6 +17,7 @@ import torch.distributed._shard.sharding_spec as shard_spec
 from torch._utils import _get_device_module
 from torch.distributed import distributed_c10d, rpc
 from torch.distributed._shard._utils import DEPRECATE_MSG
+from torch._utils import _get_device_module
 from torch.distributed._shard.sharding_spec._internals import (
     check_tensor,
     validate_non_overlapping_shards_metadata,
@@ -374,7 +375,17 @@ class ShardedTensor(ShardedTensorBase):
         This method takes into account the associated process group
         """
         backend = dist.get_backend(self._process_group)
+        backend_config = dist.BackendConfig(dist.get_backend(self._process_group))
         if backend == dist.Backend.NCCL:
+            return torch.device(torch.cuda.current_device())
+        else:
+            for device, backend_str in backend_config.get_device_backend_map().items():
+                if backend_str == backend and device != "cpu":
+                    return torch.device(
+                        device, _get_device_module(device).current_device()
+                    )
+        return torch.device("cpu")
+        if dist.get_backend(self._process_group) == dist.Backend.NCCL:
             return torch.device(torch.cuda.current_device())
         elif backend == dist.Backend.GLOO:
             return torch.device("cpu")
