@@ -1897,8 +1897,22 @@ endif()
 # only rerun when needed.
 
 if(BUILD_PYTHON)
+  # Python site-packages
+  # Get canonical directory for python site packages (relative to install
+  # location).  It varies from system to system.
+  # We should pin the path separator to the forward slash on Windows.
+  # More details can be seen at
+  # https://github.com/pytorch/pytorch/tree/main/tools/build_pytorch_libs.bat#note-backslash-munging-on-windows
+  pycmd(PYTHON_SITE_PACKAGES "
+      import os
+      import sysconfig
+      relative_site_packages = sysconfig.get_path('purelib').replace(sysconfig.get_path('data'), '').lstrip(os.path.sep)
+      print(relative_site_packages)
+  ")
+  file(TO_CMAKE_PATH ${PYTHON_SITE_PACKAGES} PYTHON_SITE_PACKAGES)
+  set(PYTHON_SITE_PACKAGES ${PYTHON_SITE_PACKAGES} PARENT_SCOPE) # for Summary
   # ---[ Options.
-  set(PYTHON_LIB_REL_PATH "${Python_SITELIB}" CACHE STRING "Python installation path (relative to CMake installation prefix)")
+  set(PYTHON_LIB_REL_PATH "${PYTHON_SITE_PACKAGES}" CACHE STRING "Python installation path (relative to CMake installation prefix)")
   message(STATUS "Using ${PYTHON_LIB_REL_PATH} as python relative installation path")
 
 
