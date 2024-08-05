@@ -325,6 +325,10 @@ def _offload_state_dict_to_cpu(
         ranks_only=ranks_only,
         type_check=type_check,
     )
+
+    if hasattr(torch,"hpu"):
+        torch.hpu.synchronize()
+
     return ret
 
 
@@ -378,20 +382,24 @@ def _copy_state_dict(
 
 
 def _create_cpu_state_dict(
-    state_dict: Dict[str, Any], pin_memory: bool = False, share_memory: bool = False
+    state_dict: Dict[str, Any],
+    pin_memory: bool = False,
+    share_memory: bool = False,
+    device: Optional[torch.device] = None
 ) -> Dict[str, Any]:
     """
     Given a state_dict, create another state_dict with the same structure and elements.
     However, all tensors in the returned state_dict are new tensors on CPU. These
-    tensors can be placed on pin_memory or share_memory based on the provided arguments.
+    tensors can be placed on pin_memory or share_memory based on the provided arguments on
+    the given device.
 
     .. warning::
         Setting both `pin_memory` and `share_memory` to True significantly increases the
         latency of this method because of the nuances which require us to register memory
         as pinned directly as opposed to relying on the pin_memory cache allocator. This
-        option should only be used for long lived tensors which are required to be shared.
-        This is not the case as long as at least one of `pin_memory` or `share_memory` is
-         set to False.
+        option is only avaiable on CUDA and should be used for long lived tensors which are 
+        required to be shared. This is not the case as long as at least one of `pin_memory`
+        or `share_memory` is set to False.
 
     """
 
@@ -405,19 +413,30 @@ def _create_cpu_state_dict(
             return torch.tensor(0, dtype=obj.dtype)
 
         if share_memory:
-            t = torch.empty(*tuple(obj.size()), dtype=obj.dtype).share_memory_()
+            t = torch.empty(*tuple(obj.size()), dtype=obj.dtype)
+            t = t.share_memory_()
             if pin_memory:
-                succ = torch.cuda.cudart().cudaHostRegister(
-                    t.data_ptr(),
-                    t.numel() * t.element_size(),
-                    1,  # lines up with 'cudaHostRegisterPortable'
+                assert device == "cuda"
+                def unpin_memory(t):
+                    succ = int(torch.cuda.cudart().cudaHostUnregister(t.data_ptr()))
+                    assert (
+                        succ == 0
+                    ), f"Unpinning shared memory failed with error-code: {succ}"
+
+                weakref.finalize(t, unpin_memory, t)
+                succ = int(
+                    torch.cuda.cudart().cudaHostRegister(
+                        t.data_ptr(),
+                        t.numel() * t.element_size(),
+                        1,  # lines up with 'cudaHostRegisterPortable'
+                    )
                 )
                 assert (
                     succ == 0
                 ), f"Pinning shared memory failed with error-code: {succ}"
             return t
         elif pin_memory:
-            return torch.empty(*tuple(obj.size()), dtype=obj.dtype).pin_memory()
+            return torch.empty(*tuple(obj.size()), dtype=obj.dtype).pin_memory(device)
         else:
             return torch.empty(*tuple(obj.size()), dtype=obj.dtype)
 
@@ -427,7 +446,7 @@ def _create_cpu_state_dict(
         _identity_func,
         tensor_func,
         pg=None,
-        device=None,
+        device=device,
         cpu_offload=False,
         ranks_only=tuple(),
         type_check=False,
