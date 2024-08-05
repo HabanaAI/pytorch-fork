@@ -215,7 +215,7 @@ class ModuleInfo:
                  decorators=None,  # Additional decorators to apply to generated tests
                  dtypes=floating_types(),  # dtypes this function is expected to work with
                  dtypesIfMPS=(torch.float16, torch.float32,),  # dtypes this function is expected to work with on MPS
-                 dtypesIfHpu=(torch.bfloat16,torch.float32,)
+                 dtypesIfHpu=(torch.bfloat16,torch.float32,),
                  supports_gradgrad=True,  # whether the op supports second order gradients
                  gradcheck_nondet_tol=0.0,  # tolerance for nondeterminism while performing gradcheck
                  module_memformat_affects_out=False,  # whether converting module to channels last will generate
