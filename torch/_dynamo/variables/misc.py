@@ -798,10 +798,8 @@ class PythonModuleVariable(VariableTracker):
         return f"PythonModuleVariable({self.value})"
 
     def call_hasattr(self, tx, name):
-        if self.is_torch:
-            result = hasattr(self.value, name)
-            return variables.ConstantVariable.create(result)
-        return super().call_hasattr(tx, name)
+        result = hasattr(self.value, name)
+        return variables.ConstantVariable.create(result)
 
 
 class TypingVariable(VariableTracker):
