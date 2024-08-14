@@ -2518,6 +2518,14 @@ class _CoalescingManager:
         for work in self.works:
             work.wait()
 
+# Global set to store coalescing supported device types
+COALESING_SUPPORTED_DTYPES = {"cuda", "hpu"}
+
+def has_coalescing_manager(device_type):
+    """
+    Checks if the given device type has a coalescing feature support.
+    """
+    return device_type in COALESING_SUPPORTED_DTYPES
 
 @contextlib.contextmanager
 def _coalescing_manager(
@@ -2656,7 +2664,7 @@ def batch_isend_irecv(p2p_op_list: List[P2POp]) -> List[Work]:
         key = "group_dst" if op.op == isend else "group_src"
         return {key: op.group_peer}
 
-    if device.type == "cuda":
+    if has_coalescing_manager(device.type):
         # NCCL style coalescing
         with _coalescing_manager(group, device, async_ops=True) as cm:
             for p2p_op in p2p_op_list:
