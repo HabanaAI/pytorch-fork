@@ -379,7 +379,7 @@ def with_comms(func: TestFunc) -> TestFunc:
         self, *args: Tuple[object], **kwargs: Dict[str, Any]  # type: ignore[misc]
     ) -> None:
         # if enough GPU we can use GPU, otherwise we fallback to CPU
-        if (not torch.cuda.is_available() or torch.cuda.device_count() < self.world_size) and
+        if (not torch.cuda.is_available() or torch.cuda.device_count() < self.world_size) and \
             (not torch.hpu.is_available() or torch.hpu.device_count() < self.world_size):
             self.device_type = "cpu"
         else:
