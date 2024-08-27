@@ -7366,7 +7366,6 @@ class CommonTemplate:
             ):
                 compiled_f = compile_fx_inner(mod, cloned_args)
 
-    @expectedFailureXPU
     def test_functionalize_rng_wrappers(self):
         # Ideally, we would like to use torch.compile for these operators. But
         # currently the plan is to introduce these operators at the partitioner
