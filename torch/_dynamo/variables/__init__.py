@@ -25,6 +25,7 @@ from .dicts import (
     CustomizedDictVariable,
     DataClassVariable,
     DefaultDictVariable,
+    FrozensetVariable,
     SetVariable,
 )
 from .distributed import BackwardHookVariable, DistributedVariable, PlacementVariable
