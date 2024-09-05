@@ -45,6 +45,7 @@ from .dicts import (
     ConstDictVariable,
     DefaultDictVariable,
     DictView,
+    FrozensetVariable,
     is_hashable,
     SetVariable,
 )
@@ -1340,6 +1341,20 @@ class BuiltinVariable(VariableTracker):
             return SetVariable(items, mutable_local=MutableLocal())
         else:
             unimplemented(f"set(): {args} {kwargs}")
+
+    def call_frozenset(self, tx, *args, **kwargs):
+        assert not kwargs
+        if not args:
+            return FrozensetVariable([])
+        assert len(args) == 1
+        arg = args[0]
+        if isinstance(arg, variables.FrozensetVariable):
+            return FrozensetVariable([x.vt for x in arg.set_items])
+        elif arg.has_unpack_var_sequence(tx):
+            items = arg.unpack_var_sequence(tx)
+            return FrozensetVariable(items)
+        else:
+            unimplemented(f"frozenset(): {args} {kwargs}")
 
     def call_zip(self, tx, *args, **kwargs):
         if kwargs:
