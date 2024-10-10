@@ -1,7 +1,10 @@
 #pragma once
 
+#include <ATen/core/Generator.h>
 #include <ATen/detail/AcceleratorHooksInterface.h>
+
 #include <c10/core/Allocator.h>
+#include <c10/core/Device.h>
 #include <c10/util/Registry.h>
 
 namespace at {
@@ -9,14 +12,35 @@ namespace at {
 struct TORCH_API HPUHooksInterface : AcceleratorHooksInterface {
   ~HPUHooksInterface() override = default;
 
-  virtual bool isPinnedPtr(const void*) const override {
+  virtual void initHPU() const {
+    TORCH_CHECK(false, "Cannot initialize HPU without HPU backend");
+  }
+
+  virtual bool hasHPU() const {
+    return false;
+  }
+  virtual const Generator& getDefaultHPUGenerator(
+      C10_UNUSED DeviceIndex device_index = -1) const {
+    TORCH_CHECK(false, "Cannot get default HPU generator without HPU backend");
+  }
+  virtual Device getDeviceFromPtr(void* /*data*/) const {
+    TORCH_CHECK(
+        false, "Cannot get device of pointer on HPU without HPU backend");
+  }
+
+  bool isPinnedPtr(const void*) const override {
     return false;
   }
 
-  virtual Allocator* getPinnedMemoryAllocator() const override {
+  Allocator* getPinnedMemoryAllocator() const override {
     TORCH_CHECK(
         false,
         "You should register `HPUHooksInterface` for HPU before call `getPinnedMemoryAllocator`.");
+  }
+  bool hasPrimaryContext(C10_UNUSED DeviceIndex device_index) const override {
+    TORCH_CHECK(
+        false,
+        "You should register `HPUHooksInterface` for HPU before call `hasPrimaryContext`.");
   }
 };
 
