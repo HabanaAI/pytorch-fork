@@ -954,8 +954,9 @@ def max_pool2d_with_indices(
 
     window_size = kernel_size[0] * kernel_size[1]
     # We fallback when using non-default dilation or when the window size is too large
+    from torch._inductor import lowering
     if (
-        torch._inductor.lowering.should_fallback_max_pool2d_with_indices(
+        lowering.should_fallback_max_pool2d_with_indices(
             kernel_size, dilation
         )
         or window_size > torch.iinfo(torch.int8).max
