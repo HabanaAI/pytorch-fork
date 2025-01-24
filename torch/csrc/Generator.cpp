@@ -78,7 +78,7 @@ static PyObject* THPGenerator_pynew(
     self->cdata = at::detail::getIPUHooks().getNewGenerator(device.index());
   } else if (device.type() == at::kHPU) {
     self->cdata =
-        at::detail::getHPUHooks().getDefaultHPUGenerator(device.index());
+        at::detail::getHPUHooks().getDefaultGenerator(device.index());
   } else if (device.type() == at::kPrivateUse1) {
     self->cdata = at::GetGeneratorForPrivateuse1(device.index());
   } else {
