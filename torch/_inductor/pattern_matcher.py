@@ -499,6 +499,8 @@ class _TargetExpr(PatternExpr):
             return f"torch.{first_repr}"
         elif isinstance(self.fns[0], torch._ops.OpOverload):
             return str(self.fns[0])
+        elif self.fns[0] is getattr(operator, first_repr, None):
+            return f"operator.{first_repr}"
         else:
             return first_repr
 
@@ -1432,6 +1434,7 @@ def _serialize_pattern(
             {msg}
             import torch
             import torch._inductor
+            import operator
 
             aten = torch.ops.aten
             prims = torch.ops.prims
