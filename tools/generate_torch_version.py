@@ -52,10 +52,10 @@ def get_torch_version(sha: str | None = None) -> str:
     version = open(pytorch_root / "version.txt").read().strip()
 
     version += "+hpu"
-    build_version = os.getenv("RELEASE_VERSION", "")
-    if build_version:
-        assert os.getenv("RELEASE_BUILD_ID") is not None
-        build_number = int(os.getenv("RELEASE_BUILD_ID", ""))
+    build_version = os.getenv("RELEASE_VERSION")
+    build_number = os.getenv("RELEASE_BUILD_NUMBER")
+    if build_version is not None:
+        assert build_number is not None
         version += f"_{build_version}-{build_number}"
     if sha != UNKNOWN:
         if sha is None:
