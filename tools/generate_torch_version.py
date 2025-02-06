@@ -51,16 +51,16 @@ def get_torch_version(sha: str | None = None) -> str:
     pytorch_root = Path(__file__).absolute().parent.parent
     version = open(pytorch_root / "version.txt").read().strip()
 
-    if os.getenv("PYTORCH_BUILD_VERSION"):
-        assert os.getenv("PYTORCH_BUILD_NUMBER") is not None
-        build_number = int(os.getenv("PYTORCH_BUILD_NUMBER", ""))
-        version = os.getenv("PYTORCH_BUILD_VERSION", "")
-        if build_number > 1:
-            version += ".post" + str(build_number)
-    elif sha != UNKNOWN:
+    version += "+hpu"
+    build_version = os.getenv("RELEASE_VERSION")
+    build_number = os.getenv("RELEASE_BUILD_NUMBER")
+    if build_version is not None:
+        assert build_number is not None
+        version += f"_{build_version}-{build_number}"
+    if sha != UNKNOWN:
         if sha is None:
             sha = get_sha(pytorch_root)
-        version += "+git" + sha[:7]
+        version += ".git" + sha[:7]
     return version
 
 
