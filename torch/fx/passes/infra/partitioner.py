@@ -49,12 +49,6 @@ class _DependencyViewer:
     def downstreams_of(self, node: Node) -> Set[Node]:
         return self.downstreams[node]
 
-<<<<<<< HEAD
-    def upstreams_of(self, node: Node) -> Set[Node]:
-        return self.upstreams[node]
-
-=======
->>>>>>> 4a12777ffed ([Partitioner] Remove unnecessary upstream nodes in dependency viewer (#146580))
 
 class CapabilityBasedPartitioner:
     def __init__(
