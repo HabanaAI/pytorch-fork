@@ -2036,7 +2036,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   inline bool has_compatible_shallow_copy_type(DispatchKeySet from) {
     auto is_dense = [](DispatchKeySet ts) {
       static const auto envp = std::getenv("PT_HPU_LAZY_MODE");
-      static const bool hpu_lazy = (envp == nullptr) or
+      static const bool hpu_lazy = (envp != nullptr) and
           ((std::atoi(envp) == 1) or (std::atoi(envp) == 2));
       constexpr auto dense_backends = DispatchKeySet(
           {BackendComponent::CPUBit,

@@ -28,11 +28,11 @@ from torch.overrides import (
 
 # This is only required for making HPU lazy to work on 2.0 upstream PyTorch.
 # This change is not to be upstreamed
-# The default mode is lazy, hence PT_HPU_LAZY_MODE is None/1/2 is lazy mode.
+# The default mode is eager, hence PT_HPU_LAZY_MODE == 1/2 is lazy mode.
 # To set non-lazy mode, use PT_HPU_LAZY_MODE=0.
 import os
-hpu_lazy_flag = os.getenv('PT_HPU_LAZY_MODE')
-hpu_lazy = hpu_lazy_flag is None or hpu_lazy_flag == '1' or hpu_lazy_flag == '2'
+hpu_lazy_flag = os.getenv('PT_HPU_LAZY_MODE', '0')
+hpu_lazy = hpu_lazy_flag == '1' or hpu_lazy_flag == '2'
 
 def _handle_torch_function_and_wrap_type_error_to_not_implemented(f):
     assigned = functools.WRAPPER_ASSIGNMENTS
