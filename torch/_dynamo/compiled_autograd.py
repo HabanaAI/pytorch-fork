@@ -333,6 +333,10 @@ class AutogradCompilerInstance:
                 or node.op == "placeholder"
                 or node.op == "output"
                 or (node.op == "call_function" and node.target in _impure_targets)
+                or (
+                    node.op == "call_function"
+                    and node.target in torch.fx.node._side_effectful_functions
+                )
             )
 
         self.fx_tracer.graph.eliminate_dead_code(is_impure)
