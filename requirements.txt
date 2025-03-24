@@ -1,6 +1,6 @@
 # Python dependencies required for development
 astunparse==1.6.3
-cmake==3.31.4 # Temp pin until we support 4.0.0?
+cmake==3.31.4
 expecttest==0.3.0
 filelock==3.17.0
 fsspec==2025.2.0
@@ -15,7 +15,6 @@ packaging==24.2
 psutil==7.0.0
 pyyaml==6.0.2
 requests==2.32.3
-# issue on Windows after >= 75.8.2 - https://github.com/pytorch/pytorch/issues/148877
 setuptools==75.8.0
 sympy==1.13.1
 types-dataclasses==0.6.6
