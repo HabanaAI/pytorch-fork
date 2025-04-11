@@ -591,6 +591,7 @@ class FunctionEvent(FormattedTimesMixin):
                 DeviceType.CUDA,
                 DeviceType.PrivateUse1,
                 DeviceType.MTIA,
+                DeviceType.HPU,
             ]
             return self.time_range.elapsed_us()
 
@@ -615,6 +616,7 @@ class FunctionEvent(FormattedTimesMixin):
                 DeviceType.CUDA,
                 DeviceType.PrivateUse1,
                 DeviceType.MTIA,
+                DeviceType.HPU,
             ]
             return self.device_time_total
 
