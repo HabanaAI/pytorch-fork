@@ -1642,4 +1642,4 @@ def _cast_buffers_to_dtype_and_device(
         if not torch.is_floating_point(buffer) or buffer_dtype is None:
             buffer.data = buffer.to(device=device)
         else:
-            buffer.data = buffer.to(device=device, dtype=buffer_dtype)
+            buffer = buffer.to(device=device, dtype=buffer_dtype)
