@@ -31,7 +31,12 @@ def device_count() -> int:
         int: the number of the current :ref:`accelerator<accelerators>` available.
             If there is no available accelerators, return 0.
     """
-    return torch._C._accelerator_deviceCount()
+    acc = current_accelerator()
+    if acc is None:
+        return 0
+
+    mod = torch.get_device_module(acc)
+    return mod.device_count()
 
 
 def is_available() -> bool:
