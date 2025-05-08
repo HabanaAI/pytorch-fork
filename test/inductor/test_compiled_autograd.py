@@ -4045,11 +4045,6 @@ known_failing_tests = {
     "test_autograd_inplace_views_cross_dtype",  # view_fn not supported by compiled autograd
     "test_current_node",  # TorchDispatchMode not yet implemented for compiled autograd
     "test_post_accumulate_grad_hook_ordering",  # accuracy error
-    "test_retain_grad_cycle",  # retains_grad_hooks
-    "test_retain_grad_inplace",  # retains_grad_hooks
-    "test_retain_grad_inplace_over_view",  # retains_grad_hooks
-    "test_retains_grad_can_always_observe_tensor_prehook",  # retains_grad_hooks
-    "test_retains_grad_inplace_multiple_outputs",  # retains_grad_hooks
     "test_accumulate_grad",  # create_graph
     "test_anomaly_assign_parent_cleanup",  # create_graph
     "test_anomaly_mode_no_check_nan",  # anomaly mode
@@ -4071,19 +4066,13 @@ known_failing_tests = {
     "test_grad_nonleaf",  # create_graph
     "test_grad_nonleaf_many_outputs",  # create_graph
     "test_hessian_vector",  # create_graph
-    "test_hook_edge_case_when_called_with_grad",  # retains_grad_hooks
     "test_inplace_on_view_backward",  # create_graph
     "test_multi_grad_any_hooks",  # register_multi_grad_hook
-    "test_multi_grad_all_hooks",  # retains_grad_hooks
     "test_nested_anomaly_detect_nan",  # create_graph
     "test_nested_anomaly_printstack_cleanup",  # create_graph
     "test_once_differentiable",  # create_graph
-    "test_prehook_ordering",  # retains_grad_hooks
-    "test_retain_grad",  # retains_grad_hooks
     "test_saved_variable_packing_unpacking_saved_original_with_hooks",  # create_graph
     "test_select_sum",  # create_graph, also needs graph breaks
-    "test_will_engine_execute_node",  # retains_grad_hooks
-    "test_backward_to_node",  # retains_grad_hooks NYI
     "test_anomaly_detect_nan",  # anomaly mode
     "test_custom_autograd_no_early_free",  # create_graph
     "test_custom_function_error",  # vjp
@@ -4139,6 +4128,17 @@ known_failing_tests = {
     # Category: Subclasses
     "test_dtensor_basic",
     "test_dtensor_contiguous_dtensor_noncontiguous_local_as_tangent",
+    "test_retain_grad",  # retains_grad_hooks
+    "test_retain_grad_cycle",  # retains_grad_hooks
+    "test_retain_grad_inplace",  # retains_grad_hooks
+    "test_retain_grad_inplace_over_view",  # retains_grad_hooks
+    "test_retains_grad_can_always_observe_tensor_prehook",  # retains_grad_hooks
+    "test_retains_grad_inplace_multiple_outputs",  # retains_grad_hooks
+    "test_hook_edge_case_when_called_with_grad",  # retains_grad_hooks
+    "test_multi_grad_all_hooks",  # retains_grad_hooks
+    "test_prehook_ordering",  # retains_grad_hooks
+    "test_will_engine_execute_node",  # retains_grad_hooks
+    "test_backward_to_node",  # retains_grad_hooks
     "test_dtensor_different_gradient_placement",
     "test_dtensor_noncontiguous_output",
     "test_dtensor_partial_placement_graph_output",
