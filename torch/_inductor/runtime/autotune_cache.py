@@ -10,7 +10,12 @@ from typing import Any, Optional, TYPE_CHECKING
 from typing_extensions import override
 
 import torch
-from torch.compiler._cache import CacheArtifactManager, CacheArtifactType
+from torch._inductor.runtime.runtime_utils import cache_dir
+from torch.compiler._cache import (
+    CacheArtifact,
+    CacheArtifactFactory,
+    CacheArtifactManager,
+)
 from torch.utils._triton import has_triton
 
 from ..remote_cache import (
@@ -57,6 +62,29 @@ def inductor_meta_from_config() -> _InductorMetaTy:
         "is_fbcode": config.is_fbcode(),
         "is_hip": is_hip,
     }
+
+
+@CacheArtifactFactory.register
+class AutotuneCacheArtifact(CacheArtifact):
+    @override
+    def populate_cache(self) -> None:
+        autotune_cache = _LocalAutotuneCacheBackend()
+        key = os.path.join(cache_dir(), self.key)
+        autotune_cache._put(key, self.content)
+
+    @override
+    @staticmethod
+    def type() -> str:
+        return "autotune"
+
+    @override
+    @staticmethod
+    def encode(content: JsonDataTy) -> bytes:
+        assert not isinstance(content, bytes)
+        serde = RemoteCacheJsonSerde()
+        content_bytes = serde.encode(content)
+        assert isinstance(content_bytes, bytes)
+        return content_bytes
 
 
 @dataclasses.dataclass
@@ -213,7 +241,7 @@ class AutotuneCache:
             cache.put(key, data)
             AutotuneCacheBundler.put(key, data)
             CacheArtifactManager.record_artifact(
-                CacheArtifactType.AUTOTUNE, os.path.basename(key), data
+                AutotuneCacheArtifact.type(), os.path.basename(key), data
             )
 
             if log.isEnabledFor(logging.DEBUG):
@@ -516,7 +544,7 @@ class LocalAutotuneCache(RemoteCache[JsonDataTy]):
             # kernels that were already compiled and cached.
             AutotuneCacheBundler.put(key, result)
             CacheArtifactManager.record_artifact(
-                CacheArtifactType.AUTOTUNE, os.path.basename(key), result
+                AutotuneCacheArtifact.type(), os.path.basename(key), result
             )
         return result
 

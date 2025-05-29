@@ -41,7 +41,7 @@ from typing import (
     TypeVar,
     Union,
 )
-from typing_extensions import Self
+from typing_extensions import override, Self
 
 import torch
 import torch.distributed as dist
@@ -87,7 +87,11 @@ from torch._subclasses.fake_tensor import (
 )
 from torch._utils_internal import log_cache_bypass
 from torch.compiler import config as cconfig
-from torch.compiler._cache import CacheArtifactManager, CacheArtifactType
+from torch.compiler._cache import (
+    CacheArtifact,
+    CacheArtifactFactory,
+    CacheArtifactManager,
+)
 from torch.fx.experimental.symbolic_shapes import has_hint, hint_int, ShapeEnv
 from torch.utils._ordered_set import OrderedSet
 
@@ -897,6 +901,18 @@ def add_ephemeral_timeout_increase_for_distributed(time_saved_ns: int) -> int:
     return increased_timeout_sec
 
 
+@CacheArtifactFactory.register
+class InductorCacheArtifact(CacheArtifact):
+    @override
+    def populate_cache(self) -> None:
+        FxGraphCache._write_to_local_cache(self.key, self.content)
+
+    @override
+    @staticmethod
+    def type() -> str:
+        return "inductor"
+
+
 class FxGraphCache:
     """
     Supports caching and reusing compiled Fx graphs.
@@ -1042,7 +1058,7 @@ class FxGraphCache:
 
         if pickled_content is not None:
             CacheArtifactManager.record_artifact(
-                CacheArtifactType.INDUCTOR, key, pickled_content
+                InductorCacheArtifact.type(), key, pickled_content
             )
 
         if bundle := graph._triton_bundle:
@@ -1155,7 +1171,7 @@ class FxGraphCache:
 
         try:
             CacheArtifactManager.record_artifact(
-                CacheArtifactType.INDUCTOR, key, content
+                InductorCacheArtifact.type(), key, content
             )
             if local:
                 FxGraphCache._write_to_local_cache(key, content)
