@@ -327,14 +327,19 @@ static bool varargsCanBeUsedAsList(
 }
 
 bool isBlockListedSchema(const FunctionSchema& schema) {
-  // Note (@zasdfgbnm):
-  // This is a workaround for https://github.com/pytorch/pytorch/issues/47964
-  // Currently JIT does not distinguish ScalarType vs int, so there is really
-  // no way to distinguish x.view(1) vs x.view(torch.int8). So we have to
-  // hardcode the aten::view.dtype here to block this overload. This blocklist
-  // should be removed when JIT fully supports ScalarType as its own type.
-  if (schema.name() == "aten::view" && schema.overload_name() == "dtype") {
-    return true;
+  static const auto envp = std::getenv("PT_HPU_LAZY_MODE");
+  static const bool hpu_lazy = (envp != nullptr) and
+      ((std::atoi(envp) == 1) or (std::atoi(envp) == 2));
+  if(!hpu_lazy) {
+    // Note (@zasdfgbnm):
+    // This is a workaround for https://github.com/pytorch/pytorch/issues/47964
+    // Currently JIT does not distinguish ScalarType vs int, so there is really
+    // no way to distinguish x.view(1) vs x.view(torch.int8). So we have to
+    // hardcode the aten::view.dtype here to block this overload. This blocklist
+    // should be removed when JIT fully supports ScalarType as its own type.
+    if (schema.name() == "aten::view" && schema.overload_name() == "dtype") {
+      return true;
+    }
   }
   // Note (@tugsbayasgalan)
   // TorchScript doesn't support kwargs so this op collides with aten.max.others
