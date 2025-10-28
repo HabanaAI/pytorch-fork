@@ -18,7 +18,7 @@ from torch._inductor.utils import (
 from torch.ao.quantization.quantizer.x86_inductor_quantizer import X86InductorQuantizer
 from torch.nn import functional as F
 from torch.testing._internal.common_device_type import instantiate_device_type_tests
-from torch.testing._internal.common_mkldnn import reduced_f32_on_and_off
+from torch.testing._internal.common_mkldnn import bf32_on_and_off
 from torch.testing._internal.common_quantization import (
     _generate_qdq_quantized_model,
     skipIfNoDynamoSupport,
@@ -319,11 +319,6 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
             memory_format,
             dtype,
         ) in options:
-            if (
-                dtype != torch.float32
-                and torch.backends.mkldnn.matmul.fp32_precision == "tf32"
-            ):
-                continue
             metrics.reset()
             if dim == 4:
                 x_shape = (1, 3, 56, 56)
@@ -362,7 +357,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoDynamoSupport
     @skipIfNoONEDNN
     @skipIfRocm
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv2d_unary(self, device):
         self.device = device
         self._test_conv_unary_base(dim=4)
@@ -370,7 +365,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoDynamoSupport
     @skipIfNoONEDNN
     @skipIfRocm
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv3d_unary(self, device):
         self.device = device
         self._test_conv_unary_base(dim=5)
@@ -454,7 +449,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfXpu(
         msg="The operator 'mkldnn::_convolution_transpose_pointwise' is not currently implemented for the XPU device."
     )
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv_transpose2d_unary(self, device):
         self.device = device
         self._test_conv_transpose_unary_base(dim=4)
@@ -465,7 +460,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfXpu(
         msg="The operator 'mkldnn::_convolution_transpose_pointwise' is not currently implemented for the XPU device."
     )
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv_transpose3d_unary(self, device):
         self.device = device
         self._test_conv_transpose_unary_base(dim=5)
@@ -520,11 +515,6 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
             memory_format,
             dtype,
         ) in options:
-            if (
-                dtype != torch.float32
-                and torch.backends.mkldnn.matmul.fp32_precision == "tf32"
-            ):
-                continue
             metrics.reset()
             if dim == 4:
                 x_shape = (1, 3, 56, 56)
@@ -560,7 +550,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoDynamoSupport
     @skipIfNoONEDNN
     @skipIfRocm
-    @reduced_f32_on_and_off(0.02)
+    @bf32_on_and_off(0.02)
     def test_conv2d_binary(self, device):
         self.device = device
         self._test_conv_binary_base(dim=4)
@@ -568,7 +558,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoDynamoSupport
     @skipIfNoONEDNN
     @skipIfRocm
-    @reduced_f32_on_and_off(0.02)
+    @bf32_on_and_off(0.02)
     def test_conv3d_binary(self, device):
         self.device = device
         self._test_conv_binary_base(dim=5)
@@ -667,7 +657,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoDynamoSupport
     @skipIfNoONEDNN
     @skipIfRocm
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv2d_binary_broadcast_shapes(self, device):
         self.device = device
         self._test_conv_binary_broadcast_shapes_base(dim=4)
@@ -675,7 +665,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoDynamoSupport
     @skipIfNoONEDNN
     @skipIfRocm
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv3d_binary_broadcast_shapes(self, device):
         self.device = device
         self._test_conv_binary_broadcast_shapes_base(dim=5)
@@ -684,7 +674,7 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
     @skipIfNoONEDNN
     @skipIfRocm
     @unittest.skipIf(IS_FBCODE, "Failing in fbcode")
-    @reduced_f32_on_and_off()
+    @bf32_on_and_off()
     def test_conv2d_linear_add_broadcast_shapes(self, device):
         self.device = device
 
@@ -716,7 +706,6 @@ class TestPatternMatcherGeneric(TestPatternMatcherBase):
 
 
 class TestPatternMatcher(TestPatternMatcherBase):
-    @reduced_f32_on_and_off()
     def test_linear_unary(self, device="cpu"):
         self.device = device
 
@@ -747,15 +736,8 @@ class TestPatternMatcher(TestPatternMatcherBase):
             dtypes.append(torch.bfloat16)
         if is_mkldnn_fp16_supported(self.device):
             dtypes.append(torch.float16)
-        if torch.backends.mkldnn.matmul.fp32_precision in ["bf16", "tf32"]:
-            dtypes.append(torch.float32)
         options = itertools.product(unary_list, [True, False], dtypes)
         for unary_fn, bias, dtype in options:
-            if (
-                dtype != torch.float32
-                and torch.backends.mkldnn.matmul.fp32_precision == "tf32"
-            ):
-                continue
             metrics.reset()
             mod = M(unary_fn, 10, 30, bias=bias).eval()
             # only fuse for linear when the dtype is bf16
@@ -764,7 +746,7 @@ class TestPatternMatcher(TestPatternMatcherBase):
 
             def matcher_check_fn():
                 match_nodes = unary_list[unary_fn]
-                if dtype != torch.float32 and self._check_unary_is_decomposed(unary_fn):
+                if self._check_unary_is_decomposed(unary_fn):
                     # Has extra dtype conversion nodes for autocast.
                     match_nodes += 2
                 self.assertEqual(
@@ -776,14 +758,9 @@ class TestPatternMatcher(TestPatternMatcherBase):
                 )
 
             self._test_common(mod, (v,), matcher_check_fn, check_autocast=dtype)
-            # only generated 1 kernel for "to_dtype"
-            expected_kernel_count = 2 if TEST_ACL else 1
-            if dtype == torch.float32:
-                # In BF32, input is float32, will not generate kernel for "to_dtype"
-                expected_kernel_count -= 1
-            self.assertEqual(metrics.generated_kernel_count, expected_kernel_count)
+            # only generated 1 kernel for "to"
+            self.assertEqual(metrics.generated_kernel_count, 2 if TEST_ACL else 1)
 
-    @reduced_f32_on_and_off()
     @unittest.skipIf(not TEST_MKL, "Test requires MKL")
     def test_linear_fp32(self, device="cpu"):
         self.device = device
@@ -931,7 +908,6 @@ class TestPatternMatcher(TestPatternMatcherBase):
             # 1 kernel for "to_lowp", 2 kernels for unary ops
             self.assertEqual(metrics.generated_kernel_count, 3)
 
-    @reduced_f32_on_and_off()
     def test_linear_binary(self, device="cpu"):
         self.device = device
 
@@ -953,8 +929,6 @@ class TestPatternMatcher(TestPatternMatcherBase):
             dtypes.append(torch.bfloat16)
         if is_mkldnn_fp16_supported(self.device):
             dtypes.append(torch.float16)
-        if torch.backends.mkldnn.matmul.fp32_precision in ["bf16", "tf32"]:
-            dtypes.append(torch.float32)
         options = itertools.product(
             binary_list, [[2, 3, 10], [2, 10]], [True, False], dtypes
         )
@@ -962,11 +936,6 @@ class TestPatternMatcher(TestPatternMatcherBase):
 
         for binary_fn, input_shape, bias, dtype in options:
             metrics.reset()
-            if (
-                dtype != torch.float32
-                and torch.backends.mkldnn.matmul.fp32_precision == "tf32"
-            ):
-                continue
 
             def matcher_check_fn():
                 self.assertEqual(
@@ -996,12 +965,7 @@ class TestPatternMatcher(TestPatternMatcherBase):
                 matcher_check_fn,
                 check_autocast=dtype,
             )
-            # only generated 1 kernel for "to_dtype"
-            expected_kernel_count = 2 if TEST_ACL else 1
-            if dtype == torch.float32:
-                # In BF32, input is float32, will not generate kernel for "to_dtype"
-                expected_kernel_count -= 1
-            self.assertEqual(metrics.generated_kernel_count, expected_kernel_count)
+            self.assertEqual(metrics.generated_kernel_count, 2 if TEST_ACL else 1)
 
     def test_linear_binary_broadcast_shapes(self, device="cpu"):
         self.device = device
