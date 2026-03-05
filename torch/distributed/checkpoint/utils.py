@@ -31,6 +31,10 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
+def _is_hpu() -> bool:
+    return hasattr(torch, "hpu") and torch.hpu.is_available()
+
+
 def _get_failure_dict(
     results: list[Union[T, WRAPPED_EXCEPTION]],
 ) -> dict[int, WRAPPED_EXCEPTION]:
@@ -116,6 +120,8 @@ class _DistWrapper:
         """Implement functionality similar to c10d::broadcast_object_list but without distributed enabled."""
         object_list = [object]
         if self.use_dist:
+            if _is_hpu():
+                self.barrier()
             dist.broadcast_object_list(
                 object_list=object_list,
                 group=self.group,
@@ -148,6 +154,8 @@ class _DistWrapper:
         if self.use_dist:
             gather_objs = cast(list[T], [None] * dist.get_world_size(self.group))
 
+            if _is_hpu():
+                self.barrier()
             dist.all_gather_object(
                 object_list=gather_objs, obj=object, group=self.group
             )
@@ -242,7 +250,11 @@ class _DistWrapper:
         except BaseException as e:  # noqa: B036
             local_data = _wrap_exception(e)
 
-        all_data = self.gather_object(local_data)
+        if _is_hpu():
+            all_data = self.all_gather_object(local_data)
+        else:
+            all_data = self.gather_object(local_data)
+
         result: Optional[Union[R, CheckpointException]] = None
         if self.is_coordinator:
             if all_data is None:

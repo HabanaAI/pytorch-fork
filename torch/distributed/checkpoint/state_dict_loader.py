@@ -17,7 +17,7 @@ from ._storage_utils import _storage_setup
 from .default_planner import DefaultLoadPlanner
 from .planner import LoadPlan, LoadPlanner
 from .storage import StorageReader
-from .utils import _api_bc_check, _DistWrapper, _profile
+from .utils import _api_bc_check, _DistWrapper, _profile, _is_hpu
 
 
 if TYPE_CHECKING:
@@ -280,7 +280,12 @@ def _load_state_dict(
 
     central_plan: Optional[LoadPlan] = None
     if use_collectives:
-        central_plan = distW.reduce_scatter("plan", local_step, global_step)
+        if _is_hpu():
+            distW.barrier()
+            all_plans = distW.all_reduce("plan", local_step, global_step)
+            central_plan = all_plans[distW.rank]
+        else:
+            central_plan = distW.reduce_scatter("plan", local_step, global_step)
     else:
         local_plan: LoadPlan = local_step()
         global_plan: list[LoadPlan] = global_step([local_plan])
