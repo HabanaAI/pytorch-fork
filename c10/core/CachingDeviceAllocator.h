@@ -111,4 +111,12 @@ C10_API inline DeviceAllocator* getDeviceAllocator(const DeviceType& t) {
   return device_allocator;
 }
 
+// Like getDeviceAllocator but returns nullptr if the allocator is not a
+// DeviceAllocator, instead of asserting.
+C10_API inline DeviceAllocator* tryGetDeviceAllocator(
+    const DeviceType& t) {
+  auto* allocator = c10::GetAllocator(t);
+  return dynamic_cast<DeviceAllocator*>(allocator);
+}
+
 } // namespace c10
