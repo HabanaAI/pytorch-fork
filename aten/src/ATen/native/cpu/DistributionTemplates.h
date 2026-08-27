@@ -4,7 +4,6 @@
 #include <ATen/Dispatch.h>
 #include <ATen/Dispatch_v2.h>
 #include <ATen/ExpandBase.h>
-#include <ATen/OpMathType.h>
 #include <ATen/core/DistributionsHelper.h>
 #include <ATen/native/TensorIterator.h>
 #include <ATen/native/cpu/Loops.h>
@@ -165,56 +164,27 @@ struct NormalFill16<float, Vectorized<float>::size() == 8> {
 #endif
 
 template <typename scalar_t, typename RNG>
-void normal_fill(const TensorBase &self, double mean, double std, RNG generator) {
-  using opmath_t = at::opmath_type<scalar_t>;
+void normal_fill(const TensorBase &self, const scalar_t mean, const scalar_t std, RNG generator) {
   scalar_t *data = self.data_ptr<scalar_t>();
   auto size = self.numel();
   std::lock_guard<std::mutex> lock(generator->mutex_);
-  at::uniform_real_distribution<opmath_t> uniform(0, 1);
-  NormalFill16<opmath_t> normal_fill_16(
-      static_cast<opmath_t>(mean), static_cast<opmath_t>(std));
+  for (const auto i : c10::irange(size)) {
+    at::uniform_real_distribution<scalar_t> uniform(0, 1);
+    data[i] = uniform(generator);
+  }
 
-  if constexpr (std::is_same_v<scalar_t, opmath_t>) {
-    // float/double: generate uniform samples directly into the output buffer,
-    // then apply Box-Muller in-place.
-    for (const auto i : c10::irange(size)) {
+  NormalFill16<scalar_t> normal_fill_16(mean, std);
+  for (int64_t i = 0; i < size - 15; i += 16) {
+    normal_fill_16(data + i);
+  }
+  if (size % 16 != 0) {
+    // Recompute the last 16 values.
+    data = data + size - 16;
+    for (const auto i : c10::irange(16)) {
+      at::uniform_real_distribution<scalar_t> uniform(0, 1);
       data[i] = uniform(generator);
     }
-    for (int64_t i = 0; i < size - 15; i += 16) {
-      normal_fill_16(data + i);
-    }
-    // Recompute the last 16 values.
-    if (size % 16 != 0) {
-      data = data + size - 16;
-      for (const auto i : c10::irange(16)) {
-        data[i] = uniform(generator);
-      }
-      normal_fill_16(data);
-    }
-  } else {
-    // bf16/fp16: generate in opmath_t precision using a stack buffer,
-    // apply Box-Muller, then cast down to scalar_t.
-    opmath_t buf[16];
-    for (int64_t i = 0; i < size - 15; i += 16) {
-      for (const auto j : c10::irange(16)) {
-        buf[j] = uniform(generator);
-      }
-      normal_fill_16(buf);
-      for (const auto j : c10::irange(16)) {
-        data[i + j] = static_cast<scalar_t>(buf[j]);
-      }
-    }
-    // Recompute the last 16 values.
-    if (size % 16 != 0) {
-      int64_t offset = size - 16;
-      for (const auto j : c10::irange(16)) {
-        buf[j] = uniform(generator);
-      }
-      normal_fill_16(buf);
-      for (const auto j : c10::irange(16)) {
-        data[offset + j] = static_cast<scalar_t>(buf[j]);
-      }
-    }
+    normal_fill_16(data);
   }
 }
 
@@ -223,7 +193,7 @@ void normal_kernel(const TensorBase &self, double mean, double std, RNG generato
   auto size = self.numel();
   AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16, self.scalar_type(), "normal_kernel_cpu", [&] {
     if (size >= 16 && self.is_contiguous()) {
-      normal_fill<scalar_t>(self, mean, std, generator);
+      normal_fill<scalar_t>(self, static_cast<scalar_t>(mean), static_cast<scalar_t>(std), generator);
     } else {
       auto iter = TensorIterator::borrowing_nullary_op(self);
       std::lock_guard<std::mutex> lock(generator->mutex_);
@@ -248,16 +218,11 @@ template<typename RNG>
 void uniform_kernel(TensorIteratorBase& iter, double from_, double to_, RNG generator) {
   AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16, iter.dtype(), "uniform_kernel_cpu", [&]() {
     std::lock_guard<std::mutex> lock(generator->mutex_);
-    using opmath_t = at::opmath_type<scalar_t>;
-    auto from = static_cast<opmath_t>(from_);
-    auto to = static_cast<opmath_t>(to_);
-    auto to_scalar = static_cast<scalar_t>(to_);
-    auto from_scalar = static_cast<scalar_t>(from_);
-    at::uniform_real_distribution<opmath_t> uniform(from, to);
-    cpu_serial_kernel(iter, [&uniform, generator, to_scalar, from_scalar]() -> scalar_t {
-      auto value = static_cast<scalar_t>(uniform(generator));
-      // Clamp if the float→scalar_t cast rounded up to the upper bound
-      return value == to_scalar ? from_scalar : value;
+    auto from = static_cast<scalar_t>(from_);
+    auto to = static_cast<scalar_t>(to_);
+    at::uniform_real_distribution<scalar_t> uniform(from, to);
+    cpu_serial_kernel(iter, [&uniform, generator]() -> scalar_t {
+      return static_cast<scalar_t>(uniform(generator));
     });
   });
 }

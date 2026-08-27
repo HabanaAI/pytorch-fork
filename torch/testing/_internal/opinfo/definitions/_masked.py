@@ -456,13 +456,6 @@ op_db: list[OpInfo] = [
                 "test_reference_masked",
                 dtypes=(torch.bool, torch.int8, torch.int16, torch.int32),
             ),
-            # FIXME: improve precision
-            DecorateInfo(
-                unittest.skip("Skipped!"),
-                "TestReductions",
-                "test_reference_masked",
-                dtypes=(torch.float16,),
-            ),
             DecorateInfo(
                 unittest.expectedFailure,
                 "TestNormalizeOperators",
